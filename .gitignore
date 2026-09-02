@@ -33,7 +33,7 @@ coverage/
 .npm-cache/
 .pnpm-store/
 .tmp/
-OP/
+/OP/
 report_assets/
 *.docx
 *.pdf
