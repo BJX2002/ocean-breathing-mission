@@ -1,0 +1,49 @@
+[
+  {
+    "id": "m1-first-dive",
+    "titleEn": "First Dive Survey",
+    "titleZh": "首次潛水調查",
+    "locationId": "aquaculture-bay",
+    "chapter": 1,
+    "objectives": [
+      {
+        "id": "locate-stations",
+        "textEn": "Locate three historical camera stations.",
+        "textZh": "定位三個歷史相機站。"
+      },
+      {
+        "id": "photograph-organisms",
+        "textEn": "Photograph at least five representative organisms.",
+        "textZh": "拍攝至少五種代表性生物。"
+      },
+      {
+        "id": "take-do-reading",
+        "textEn": "Let the diver's survey unit log DO near a station.",
+        "textZh": "讓潛水員的調查裝置在觀測點附近自動記錄 DO。"
+      },
+      {
+        "id": "return-safely",
+        "textEn": "Return to the vessel before oxygen runs out.",
+        "textZh": "在氧氣耗盡前返回船隻。"
+      }
+    ],
+    "oxygenBudget": 100,
+    "timeLimitSeconds": 180
+  },
+  {
+    "id": "m2-monitoring-design",
+    "titleEn": "Design a Monitoring Network",
+    "titleZh": "設計監測網",
+    "locationId": "aquaculture-bay",
+    "chapter": 2,
+    "objectives": [
+      {
+        "id": "capture-dawn-event",
+        "textEn": "Capture a near-bottom low-oxygen event before dawn within budget.",
+        "textZh": "在預算內捕捉黎明前近底層的低氧事件。"
+      }
+    ],
+    "oxygenBudget": 0,
+    "timeLimitSeconds": 0
+  }
+]

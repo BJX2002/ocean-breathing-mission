@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env / local
+*.local
+.env
+.env.*
+
+# Test / coverage
+coverage/
+
+# Local QA / document-production working files
+.analysis_tmp/
+.codex-docx-review/
+.npm-cache/
+.pnpm-store/
+.tmp/
+OP/
+report_assets/
+*.docx
+*.pdf
+*.pptx
+*.zip
+
+# Source masters and authoring archives are retained locally. The web-ready
+# H.264/AAC *.web.mp4 files remain tracked for the playable demo.
+public/assets/chapter1/op/*.mp4
+!public/assets/chapter1/op/*.web.mp4
+public/assets/chapter1/op2/*.hevc*.mp4

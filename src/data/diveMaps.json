@@ -1,0 +1,43 @@
+[
+  {
+    "locationId": "aquaculture-bay",
+    "decor": [
+      { "kind": "buoy", "x": 330, "y": 160 },
+      { "kind": "buoy", "x": 1560, "y": 165 },
+      { "kind": "coral", "x": 450, "y": 900 },
+      { "kind": "coral", "x": 1170, "y": 930 },
+      { "kind": "coral", "x": 1470, "y": 885 },
+      { "kind": "rock", "x": 840, "y": 960 },
+      { "kind": "rock", "x": 240, "y": 915 },
+      { "kind": "seagrass", "x": 630, "y": 975 },
+      { "kind": "seagrass", "x": 1020, "y": 983 },
+      { "kind": "seagrass", "x": 1320, "y": 972 }
+    ],
+    "cameraStations": [
+      { "id": "cs-1", "x": 420, "y": 350, "labelEn": "Station 1 — Bay entrance", "labelZh": "站點 1 — 灣口" },
+      { "id": "cs-2", "x": 960, "y": 555, "labelEn": "Station 2 — Raft edge", "labelZh": "站點 2 — 魚排邊" },
+      { "id": "cs-3", "x": 1500, "y": 755, "labelEn": "Station 3 — Inner bay", "labelZh": "站點 3 — 內灣" }
+    ],
+    "subjects": [
+      { "id": "subject-school-1", "speciesId": "blue-damselfish", "x": 300, "y": 330, "visual": "school", "depthZone": "mid" },
+      { "id": "subject-grouper-1", "speciesId": "reef-grouper", "x": 560, "y": 780, "visual": "goby", "depthZone": "bottom" },
+      { "id": "subject-cucumber-1", "speciesId": "sea-cucumber", "x": 840, "y": 890, "visual": "cucumber", "depthZone": "bottom" },
+      { "id": "subject-goby-1", "speciesId": "hardy-goby", "x": 1160, "y": 815, "visual": "goby", "depthZone": "bottom" },
+      { "id": "subject-sponge-1", "speciesId": "tube-sponge", "x": 1380, "y": 905, "visual": "sponge", "depthZone": "bottom" },
+      { "id": "subject-school-2", "speciesId": "silver-reef-fish", "x": 1640, "y": 360, "visual": "school", "depthZone": "mid" }
+    ]
+  },
+  {
+    "locationId": "coral-bay",
+    "decor": [
+      { "kind": "coral", "x": 540, "y": 915 },
+      { "kind": "coral", "x": 1080, "y": 945 },
+      { "kind": "rock", "x": 780, "y": 960 },
+      { "kind": "seagrass", "x": 900, "y": 983 }
+    ],
+    "cameraStations": [
+      { "id": "cs-ref-1", "x": 630, "y": 510, "labelEn": "Tutorial station", "labelZh": "教學站點" }
+    ],
+    "subjects": []
+  }
+]

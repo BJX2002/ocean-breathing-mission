@@ -1,0 +1,62 @@
+[
+  {
+    "id": "vessel-sampling",
+    "nameEn": "Vessel Sampling",
+    "nameZh": "船隻採樣",
+    "category": "vessel-sampling",
+    "unitCost": 2000,
+    "maintenanceCost": 0,
+    "samplingIntervalMinutes": 0,
+    "maxDepthZone": "bottom",
+    "continuous": false,
+    "wireless": false
+  },
+  {
+    "id": "handheld-do",
+    "nameEn": "Handheld DO Meter",
+    "nameZh": "手持溶氧計",
+    "category": "handheld",
+    "unitCost": 800,
+    "maintenanceCost": 50,
+    "samplingIntervalMinutes": 0,
+    "maxDepthZone": "mid",
+    "continuous": false,
+    "wireless": false
+  },
+  {
+    "id": "fixed-probe",
+    "nameEn": "Conventional Fixed Probe",
+    "nameZh": "傳統固定探頭",
+    "category": "fixed-probe",
+    "unitCost": 1500,
+    "maintenanceCost": 200,
+    "samplingIntervalMinutes": 15,
+    "maxDepthZone": "bottom",
+    "continuous": true,
+    "wireless": false
+  },
+  {
+    "id": "sensing-film-node",
+    "nameEn": "Sensing-film Node",
+    "nameZh": "感測膜節點",
+    "category": "sensing-film",
+    "unitCost": 600,
+    "maintenanceCost": 60,
+    "samplingIntervalMinutes": 10,
+    "maxDepthZone": "bottom",
+    "continuous": true,
+    "wireless": false
+  },
+  {
+    "id": "wireless-buoy",
+    "nameEn": "Wireless Buoy / Gateway",
+    "nameZh": "無線浮標／閘道",
+    "category": "gateway",
+    "unitCost": 1200,
+    "maintenanceCost": 100,
+    "samplingIntervalMinutes": 5,
+    "maxDepthZone": "surface",
+    "continuous": true,
+    "wireless": true
+  }
+]

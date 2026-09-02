@@ -1,0 +1,32 @@
+[
+  {
+    "id": "coral-bay",
+    "nameEn": "Coral Bay (fictional composite)",
+    "nameZh": "珊瑚灣（虛構合成）",
+    "type": "reference",
+    "isFictionalComposite": true,
+    "depthZones": ["surface", "mid", "bottom"],
+    "descriptionEn": "A healthy reference bay used for the tutorial. Inspired by eastern Hong Kong marine scenery; not a claim about any named site.",
+    "descriptionZh": "作為教學用的健康參考海灣。靈感取自香港東部海景，並非針對任何具名地點的主張。"
+  },
+  {
+    "id": "aquaculture-bay",
+    "nameEn": "Aquaculture Bay (fictional composite)",
+    "nameZh": "養殖海灣（虛構合成）",
+    "type": "monitoring",
+    "isFictionalComposite": true,
+    "depthZones": ["surface", "mid", "bottom"],
+    "descriptionEn": "Core monitoring level combining raft, bay entrance and near-bottom differences. Data labelled educational simulation.",
+    "descriptionZh": "核心監測關卡，結合魚排、灣口與近底層的差異。數據標示為教育模擬。"
+  },
+  {
+    "id": "semi-enclosed-sea",
+    "nameEn": "Northern Semi-enclosed Sea (fictional composite)",
+    "nameZh": "北方半封閉海（虛構合成）",
+    "type": "extension",
+    "isFictionalComposite": true,
+    "depthZones": ["surface", "mid", "bottom"],
+    "descriptionEn": "Global extension explaining slow water exchange, stratification and bottom hypoxia without ranking countries.",
+    "descriptionZh": "全球延伸關卡，說明水體交換緩慢、分層與底層缺氧，且不對國家排名。"
+  }
+]

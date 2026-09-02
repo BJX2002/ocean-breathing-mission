@@ -1,0 +1,42 @@
+[
+  {
+    "id": "camera",
+    "nameEn": "Camera",
+    "nameZh": "相機",
+    "category": "photography",
+    "slotCost": 1,
+    "batteryDrainPerSecond": 0.5,
+    "descriptionEn": "Supports repeat photography for past/present evidence comparison.",
+    "descriptionZh": "支援重複拍攝，用於新舊證據比對。"
+  },
+  {
+    "id": "sonar",
+    "nameEn": "Sonar",
+    "nameZh": "聲納",
+    "category": "navigation",
+    "slotCost": 1,
+    "batteryDrainPerSecond": 0.3,
+    "descriptionEn": "Helps locate distant schools and landmarks.",
+    "descriptionZh": "協助定位遠處魚群與地標。"
+  },
+  {
+    "id": "species-scanner",
+    "nameEn": "Species Scanner",
+    "nameZh": "物種掃描器",
+    "category": "scanning",
+    "slotCost": 1,
+    "batteryDrainPerSecond": 0.4,
+    "descriptionEn": "Supports non-destructive identification of representative organisms.",
+    "descriptionZh": "支援對代表性生物進行非破壞性辨識。"
+  },
+  {
+    "id": "portable-sampler",
+    "nameEn": "Portable Sampler",
+    "nameZh": "便攜採樣器",
+    "category": "sampling",
+    "slotCost": 2,
+    "batteryDrainPerSecond": 0.2,
+    "descriptionEn": "Provides limited field data such as a single portable DO reading.",
+    "descriptionZh": "提供有限的現場數據，例如單次便攜溶氧讀數。"
+  }
+]

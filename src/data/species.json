@@ -1,0 +1,68 @@
+[
+  {
+    "id": "blue-damselfish",
+    "nameEn": "Regal Damselfish",
+    "nameZh": "石剝（雀鯛）",
+    "functionalGroup": "strongly-mobile-fish",
+    "abundanceCategory": "common",
+    "mobility": "high",
+    "preferredDepthZone": "mid",
+    "oxygenTolerance": "moderate",
+    "surveyStatus": "still-observed"
+  },
+  {
+    "id": "reef-grouper",
+    "nameEn": "Spotted Grouper",
+    "nameZh": "斑點石斑",
+    "functionalGroup": "habitat-associated-fish",
+    "abundanceCategory": "occasional",
+    "mobility": "medium",
+    "preferredDepthZone": "bottom",
+    "oxygenTolerance": "moderate",
+    "surveyStatus": "less-frequently-observed"
+  },
+  {
+    "id": "sea-cucumber",
+    "nameEn": "Sea Cucumber",
+    "nameZh": "海參",
+    "functionalGroup": "benthic-invertebrate",
+    "abundanceCategory": "occasional",
+    "mobility": "low",
+    "preferredDepthZone": "bottom",
+    "oxygenTolerance": "low",
+    "surveyStatus": "not-observed"
+  },
+  {
+    "id": "hardy-goby",
+    "nameEn": "Eye-marked Goby",
+    "nameZh": "眼斑鰕虎魚",
+    "functionalGroup": "tolerant-organism",
+    "abundanceCategory": "abundant",
+    "mobility": "medium",
+    "preferredDepthZone": "bottom",
+    "oxygenTolerance": "high",
+    "surveyStatus": "still-observed"
+  },
+  {
+    "id": "tube-sponge",
+    "nameEn": "Tube Sponge",
+    "nameZh": "管狀海綿",
+    "functionalGroup": "benthic-invertebrate",
+    "abundanceCategory": "occasional",
+    "mobility": "low",
+    "preferredDepthZone": "bottom",
+    "oxygenTolerance": "moderate",
+    "surveyStatus": "shifted-distribution"
+  },
+  {
+    "id": "silver-reef-fish",
+    "nameEn": "Silver Moony",
+    "nameZh": "銀月魚",
+    "functionalGroup": "strongly-mobile-fish",
+    "abundanceCategory": "common",
+    "mobility": "high",
+    "preferredDepthZone": "mid",
+    "oxygenTolerance": "moderate",
+    "surveyStatus": "less-frequently-observed"
+  }
+]

@@ -1,0 +1,54 @@
+{
+  "alertBands": [
+    {
+      "id": "oxygenated",
+      "labelEn": "Relatively oxygenated",
+      "labelZh": "相對充氧",
+      "minMgPerL": 4,
+      "maxMgPerL": null,
+      "severity": "normal"
+    },
+    {
+      "id": "warning",
+      "labelEn": "Low-oxygen warning",
+      "labelZh": "低氧警戒",
+      "minMgPerL": 2,
+      "maxMgPerL": 4,
+      "severity": "warning"
+    },
+    {
+      "id": "severe",
+      "labelEn": "Severe hypoxia",
+      "labelZh": "嚴重缺氧",
+      "minMgPerL": null,
+      "maxMgPerL": 2,
+      "severity": "severe"
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "baseline-day",
+      "nameEn": "Baseline (Daytime)",
+      "nameZh": "基準（日間）",
+      "descriptionEn": "Educational simulation: a relatively oxygenated daytime profile. Not real-time data for any named site.",
+      "descriptionZh": "教育模擬：相對充氧的日間剖面。並非任何具名水域的即時數據。",
+      "readings": [
+        { "depthZone": "surface", "timeOfDay": "day", "doMgPerL": 6.8 },
+        { "depthZone": "mid", "timeOfDay": "day", "doMgPerL": 6.1 },
+        { "depthZone": "bottom", "timeOfDay": "day", "doMgPerL": 5.2 }
+      ]
+    },
+    {
+      "id": "dawn-bottom-event",
+      "nameEn": "Dawn Near-bottom Event",
+      "nameZh": "黎明近底層事件",
+      "descriptionEn": "Educational simulation: surface looks normal while near-bottom water dips at dawn. Illustrates why single daytime sampling can miss events.",
+      "descriptionZh": "教育模擬：表層看似正常，近底層卻在黎明下降。用以說明單次日間採樣為何可能漏測事件。",
+      "readings": [
+        { "depthZone": "surface", "timeOfDay": "dawn", "doMgPerL": 5.9 },
+        { "depthZone": "mid", "timeOfDay": "dawn", "doMgPerL": 3.4 },
+        { "depthZone": "bottom", "timeOfDay": "dawn", "doMgPerL": 1.6 }
+      ]
+    }
+  ]
+}
