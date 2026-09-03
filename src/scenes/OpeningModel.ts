@@ -1,7 +1,7 @@
 import type { NarrationVoice } from '../state/ExperiencePreferences';
 
 export type OpeningVoice = NarrationVoice;
-export type OpeningStage = 'op01' | 'photoReview' | 'op02';
+export type OpeningStage = 'op01' | 'photoReview' | 'photoConclusion' | 'op02';
 
 /** UI language and narration are deliberately independent choices. */
 export function resolveOpeningVoice(requested: OpeningVoice): OpeningVoice {
@@ -23,7 +23,8 @@ export function getOpeningVideoFile(stage: 'op01' | 'op02', voice: OpeningVoice)
 
 export function nextOpeningStage(stage: OpeningStage): OpeningStage | 'dive' {
   if (stage === 'op01') return 'photoReview';
-  if (stage === 'photoReview') return 'op02';
+  if (stage === 'photoReview') return 'photoConclusion';
+  if (stage === 'photoConclusion') return 'op02';
   return 'dive';
 }
 

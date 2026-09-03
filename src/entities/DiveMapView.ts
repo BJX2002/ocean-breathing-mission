@@ -323,7 +323,9 @@ export class DiveMapView {
         });
       }
     }
+    const guidedSubject = this.subjects.find((subject) => !subject.hasPhoto) ?? null;
     for (const subject of this.subjects) {
+      subject.setGuidedTarget(subject === guidedSubject);
       if (subject.updateFocus(diverX, diverY)) {
         eventBus.emit('subject:discovered', {
           subjectId: subject.id,
@@ -422,6 +424,20 @@ export class DiveMapView {
         !subject.hasPhoto &&
         Phaser.Math.Distance.Between(x, y, subject.position.x, subject.position.y) <= 128,
     );
+  }
+
+  getNearestPhotographableSubject(
+    x: number,
+    y: number,
+  ): { speciesId: string; label: string; distance: number } | null {
+    let nearest: { speciesId: string; label: string; distance: number } | null = null;
+    for (const subject of this.subjects) {
+      if (subject.hasPhoto) continue;
+      const distance = Phaser.Math.Distance.Between(x, y, subject.position.x, subject.position.y);
+      if (distance > 128 || (nearest !== null && distance >= nearest.distance)) continue;
+      nearest = { speciesId: subject.speciesId, label: subject.labelText, distance };
+    }
+    return nearest;
   }
 
   getLayoutObstacles(): readonly LayoutRect[] {

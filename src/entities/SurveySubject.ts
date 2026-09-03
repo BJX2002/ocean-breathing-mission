@@ -66,6 +66,7 @@ export class SurveySubject {
   private readonly isFish: boolean;
   private readonly displayName: string;
   private focused = false;
+  private guided = false;
   private alertUntil = 0;
   private photoRecorded = false;
 
@@ -162,6 +163,16 @@ export class SurveySubject {
     return this.focused;
   }
 
+  setGuidedTarget(guided: boolean): void {
+    this.guided = guided && !this.photoRecorded;
+    if (!this.focused) {
+      this.aura.setVisible(this.guided).setFillStyle(0xf0c95a, 0.035);
+      this.ring
+        .setVisible(this.guided)
+        .setStrokeStyle(2, 0xf0c95a, this.guided ? 0.48 : 0);
+    }
+  }
+
   updateFocus(diverX: number, diverY: number): boolean {
     const distance = Phaser.Math.Distance.Between(diverX, diverY, this.data.x, this.data.y);
     const focused = distance <= OBSERVATION_RADIUS;
@@ -176,11 +187,15 @@ export class SurveySubject {
     }
     this.focused = focused;
 
-    this.aura.setVisible(focused);
-    this.ring.setVisible(focused);
+    this.aura
+      .setVisible(focused || this.guided)
+      .setFillStyle(focused ? 0x3fd0c9 : 0xf0c95a, focused ? 0.07 : 0.035);
+    this.ring.setVisible(focused || this.guided);
     this.label.setVisible(focused);
     if (focused) {
       this.ring.setStrokeStyle(3, this.photoRecorded ? 0x9aa8b8 : 0x9cf7ef, 0.85);
+    } else if (this.guided) {
+      this.ring.setStrokeStyle(2, 0xf0c95a, 0.48);
     }
 
     if (this.isFish) {
@@ -221,6 +236,7 @@ export class SurveySubject {
     if (this.photoRecorded) return null;
 
     this.photoRecorded = true;
+    this.guided = false;
     this.ring.setStrokeStyle(3, 0x91e6a7, 0.9);
     return { subjectId: this.data.id, tool: 'camera' };
   }

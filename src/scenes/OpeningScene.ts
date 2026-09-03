@@ -110,7 +110,12 @@ export class OpeningScene extends Phaser.Scene {
 
   create(): void {
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
-    this.stage = gameState.debugMode && requestedScreen === 'archive' ? 'photoReview' : 'op01';
+    this.stage =
+      gameState.debugMode && requestedScreen === 'archive'
+        ? 'photoReview'
+        : gameState.debugMode && requestedScreen === 'photo-conclusion'
+          ? 'photoConclusion'
+          : 'op01';
     this.voice = experiencePreferences.getVoice();
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Opening });
     this.input.keyboard?.on('keydown-ESC', this.onEscape, this);
@@ -131,6 +136,11 @@ export class OpeningScene extends Phaser.Scene {
     this.destroyVideo();
     if (this.stage === 'photoReview') {
       this.renderPhotoReview();
+      this.sharpenText();
+      return;
+    }
+    if (this.stage === 'photoConclusion') {
+      this.renderPhotoConclusion();
       this.sharpenText();
       return;
     }
@@ -691,8 +701,14 @@ export class OpeningScene extends Phaser.Scene {
         this.renderStage();
         return;
       }
-      this.stage = 'op02';
-      this.startWithNarration = true;
+      const allPhotosReviewed = PHOTO_HOTSPOTS.every((hotspots, index) =>
+        hotspots.some((hotspot) => this.photoHotspotFound.has(`${index}:${hotspot.id}`)),
+      );
+      if (!allPhotosReviewed) {
+        this.photoHotspotReactionText?.setText(i18n.t('opening.photoReviewAllBeforeConclusion'));
+        return;
+      }
+      this.stage = 'photoConclusion';
       this.renderStage();
     });
     const backButton = this.addButton(112, GAME_HEIGHT - 70, i18n.t('common.backStep'), false);
@@ -704,6 +720,110 @@ export class OpeningScene extends Phaser.Scene {
       this.photoPitch = 0;
       this.stage = 'op01';
       this.startWithNarration = false;
+      this.renderStage();
+    });
+  }
+
+  private renderPhotoConclusion(): void {
+    this.uiObjects.push(
+      this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x04131f, 1).setOrigin(0).setDepth(-10),
+    );
+    const panel = createResearchSurface(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, 1380, 760, {
+      depth: 1,
+      fill: Palette.modal,
+      border: Palette.accentSoft,
+      borderAlpha: 0.55,
+      radius: 28,
+      shadow: true,
+      goldRail: true,
+    });
+    const title = this.add
+      .text(GAME_WIDTH / 2, 190, i18n.t('opening.photoConclusionTitle'), {
+        fontFamily: 'sans-serif',
+        fontSize: '46px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+    const question = this.add
+      .text(
+        GAME_WIDTH / 2,
+        315,
+        `${i18n.t('common.questionLabel')} ${i18n.t('opening.photoConclusionQuestion')}`,
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '30px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          wordWrap: { width: 1100, useAdvancedWrap: true },
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(3);
+    const options = this.add
+      .text(410, 405, i18n.t('common.optionsLabel'), {
+        fontFamily: 'monospace',
+        fontSize: '21px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setDepth(3);
+    const feedback = this.add
+      .text(GAME_WIDTH / 2, 660, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#91e6a7',
+        align: 'center',
+        wordWrap: { width: 980, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5)
+      .setDepth(3);
+    this.uiObjects.push(panel, title, question, options, feedback);
+
+    let continueButton: Phaser.GameObjects.Text | null = null;
+    const choices = [
+      { key: 'opening.photoConclusionA', correct: true },
+      { key: 'opening.photoConclusionB', correct: false },
+    ] as const;
+    choices.forEach((choice, index) => {
+      const button = this.addButton(
+        index === 0 ? 660 : 1260,
+        535,
+        `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
+        false,
+      );
+      button.setFontSize(23);
+      button.on(Phaser.Input.Events.POINTER_UP, () => {
+        feedback
+          .setText(
+            i18n.t(
+              choice.correct
+                ? 'opening.photoConclusionCorrect'
+                : 'opening.photoConclusionTryAgain',
+            ),
+          )
+          .setColor(choice.correct ? '#91e6a7' : '#ffb09d');
+        continueButton?.setVisible(choice.correct);
+      });
+    });
+    continueButton = this.addButton(
+      GAME_WIDTH / 2,
+      785,
+      i18n.t('opening.photoConclusionContinue'),
+      true,
+    ).setVisible(false);
+    continueButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      this.stage = 'op02';
+      this.startWithNarration = true;
+      this.renderStage();
+    });
+    const back = this.addButton(390, 785, i18n.t('common.backStep'), false);
+    back.on(Phaser.Input.Events.POINTER_UP, () => {
+      this.photoIndex = PHOTO_KEYS.length - 1;
+      this.stage = 'photoReview';
       this.renderStage();
     });
   }

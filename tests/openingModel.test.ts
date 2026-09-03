@@ -23,7 +23,8 @@ describe('Chapter 1 opening model', () => {
 
   it('keeps the opening stage order explicit', () => {
     expect(nextOpeningStage('op01')).toBe('photoReview');
-    expect(nextOpeningStage('photoReview')).toBe('op02');
+    expect(nextOpeningStage('photoReview')).toBe('photoConclusion');
+    expect(nextOpeningStage('photoConclusion')).toBe('op02');
     expect(nextOpeningStage('op02')).toBe('dive');
   });
 

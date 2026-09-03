@@ -24,8 +24,6 @@ export interface FoodWebPuzzleCopy {
   readonly progress: string;
   readonly complete: string;
   readonly wrongZone: string;
-  readonly tapSelect: string;
-  readonly tapPlace: string;
 }
 
 export interface FoodWebPuzzleOptions {
@@ -69,7 +67,6 @@ export class FoodWebPuzzle {
   private readonly occupiedSlots = new Map<FoodWebZoneId, number>();
   private readonly progressText: Phaser.GameObjects.Text;
   private readonly feedbackText: Phaser.GameObjects.Text;
-  private selectedCard: DraggableCard | null = null;
   private placedCount = 0;
   private completeNotified = false;
   private destroyed = false;
@@ -307,12 +304,7 @@ export class FoodWebPuzzle {
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5, 0).setDepth(depth + 1);
-    const hitArea = this.scene.add
-      .rectangle(zone.x, zone.y, zone.width, zone.height, 0xffffff, 0.001)
-      .setDepth(depth + 1)
-      .setInteractive({ useHandCursor: true });
-    hitArea.on(Phaser.Input.Events.POINTER_UP, () => this.placeSelectedCard(zone, depth + 3));
-    this.objects.push(g, label, hitArea);
+    this.objects.push(g, label);
   }
 
   private createCard(
@@ -351,7 +343,6 @@ export class FoodWebPuzzle {
 
     root.on(Phaser.Input.Events.GAMEOBJECT_DRAG_START, () => {
       if (card.placed) return;
-      this.clearSelectedCard();
       root.setDepth(depth + 20).setScale(1.04);
       this.paintCard(background, true);
       this.feedbackText.setText('');
@@ -369,56 +360,6 @@ export class FoodWebPuzzle {
         this.rejectCard(card, depth);
       }
     });
-    root.on(Phaser.Input.Events.POINTER_UP, (pointer: Phaser.Input.Pointer) => {
-      if (card.placed) return;
-      const travel = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.x, pointer.y);
-      if (travel <= 12) this.selectCard(card);
-    });
-  }
-
-  private selectCard(card: DraggableCard): void {
-    if (this.selectedCard === card) {
-      this.clearSelectedCard();
-      this.feedbackText.setColor('#9bb9c9').setText(this.options.copy.tapSelect);
-      return;
-    }
-    this.clearSelectedCard();
-    this.selectedCard = card;
-    card.root.setScale(1.05);
-    this.paintCard(card.background, true);
-    this.feedbackText
-      .setColor('#f0c95a')
-      .setText(`${this.options.copy.tapPlace}: ${card.spec.label}`);
-  }
-
-  private clearSelectedCard(): void {
-    if (this.selectedCard === null || this.selectedCard.placed) {
-      this.selectedCard = null;
-      return;
-    }
-    this.selectedCard.root.setScale(1);
-    this.paintCard(this.selectedCard.background, false);
-    this.selectedCard = null;
-  }
-
-  private placeSelectedCard(zone: ZoneLayout, depth: number): void {
-    const card = this.selectedCard;
-    if (card === null || card.placed) {
-      this.feedbackText.setColor('#9bb9c9').setText(this.options.copy.tapSelect);
-      return;
-    }
-    if (card.spec.zone !== zone.id) {
-      this.feedbackText.setColor('#f2a679').setText(this.options.copy.wrongZone);
-      this.scene.tweens.add({
-        targets: card.root,
-        x: card.root.x + 7,
-        duration: 65,
-        yoyo: true,
-        repeat: 2,
-      });
-      return;
-    }
-    this.placeCard(card, zone, depth);
   }
 
   private createCardIcon(textureKey: string | null): Phaser.GameObjects.GameObject {
@@ -452,7 +393,6 @@ export class FoodWebPuzzle {
     const slot = zone.slots[Math.min(occupied, zone.slots.length - 1)]!;
     this.occupiedSlots.set(zone.id, occupied + 1);
     card.placed = true;
-    if (this.selectedCard === card) this.selectedCard = null;
     this.scene.input.setDraggable(card.root, false);
     card.root.disableInteractive().setDepth(depth + 6).setScale(0.93);
     this.paintCard(card.background, false);

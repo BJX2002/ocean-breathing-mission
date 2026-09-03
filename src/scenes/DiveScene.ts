@@ -90,6 +90,7 @@ export class DiveScene extends Phaser.Scene {
   private hud!: NormalGameplayHUD;
   private reviewHintText!: Phaser.GameObjects.Text;
   private vesselRoot!: Phaser.GameObjects.Container;
+  private vesselReturnGuide: Phaser.GameObjects.Container | null = null;
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
   private lessonOverlayObjects: Phaser.GameObjects.GameObject[] = [];
   private foodWebPuzzle: FoodWebPuzzle | null = null;
@@ -207,7 +208,7 @@ export class DiveScene extends Phaser.Scene {
     // The controls briefing is the final beat of the opening sequence. Show it
     // every time Chapter 1 is deliberately started so saved progress never
     // causes the player to miss the actual instructions.
-    if (gameState.selectedChapter === 1 && !debugScreenRequested) this.showBriefing();
+    if (gameState.selectedChapter === 1 && !debugScreenRequested) this.showMissionBriefing();
     this.sharpenVisibleText();
   }
 
@@ -359,6 +360,29 @@ export class DiveScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0),
     );
+    const guideRing = this.add
+      .ellipse(0, -34, 350, 190, 0xf0c95a, 0.035)
+      .setStrokeStyle(3, 0xf0c95a, 0.58);
+    const guideArrow = this.add
+      .text(0, 72, '▲', {
+        fontFamily: 'sans-serif',
+        fontSize: '27px',
+        color: '#f0c95a',
+      })
+      .setOrigin(0.5);
+    this.vesselReturnGuide = this.add
+      .container(VESSEL.x, VESSEL.y, [guideRing, guideArrow])
+      .setDepth(6)
+      .setVisible(false);
+    this.tweens.add({
+      targets: [guideRing, guideArrow],
+      alpha: { from: 0.35, to: 0.9 },
+      scale: { from: 0.96, to: 1.04 },
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
   private handleAction(x: number, y: number): void {
@@ -390,10 +414,15 @@ export class DiveScene extends Phaser.Scene {
       stationTarget === null
         ? null
         : { kind: 'station', key: 'E', label: i18n.t('dive.hudEnterCamera') };
+    const subjectTarget = this.mapView?.getNearestPhotographableSubject(x, y) ?? null;
     const subjectInteraction: HudInteraction | null =
-      this.mapView?.hasNearbyPhotographableSubject(x, y) === true
-        ? { kind: 'subject', key: 'SPACE', label: i18n.t('dive.hudPhotograph') }
-        : null;
+      subjectTarget === null
+        ? null
+        : {
+            kind: 'subject',
+            key: 'SPACE',
+            label: i18n.t('dive.subjectMission').replace('{species}', subjectTarget.label),
+          };
     const vesselInteraction: HudInteraction | null = this.isNearVessel(x, y)
       ? {
           kind: 'vessel',
@@ -404,6 +433,122 @@ export class DiveScene extends Phaser.Scene {
         }
       : null;
     this.hud.setInteraction(stationInteraction, subjectInteraction, vesselInteraction);
+    this.vesselReturnGuide?.setVisible(this.isReadyToReturn());
+  }
+
+  /** One-page mission handoff shown immediately after the opening sequence. */
+  private showMissionBriefing(): void {
+    this.briefingOpen = true;
+    this.paused = true;
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2;
+    const dim = this.add
+      .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02060c, 0.8)
+      .setOrigin(0)
+      .setDepth(3000)
+      .setInteractive();
+    const panel = createResearchSurface(this, cx, cy, 1510, 850, {
+      depth: 3001,
+      fill: Palette.modal,
+      border: Palette.accentSoft,
+      borderAlpha: 0.64,
+      radius: 30,
+      shadow: true,
+      goldRail: true,
+    });
+    const eyebrow = this.add
+      .text(270, 145, i18n.t('dive.briefingEyebrow'), {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setDepth(3003);
+    const title = this.add
+      .text(cx, 220, i18n.t('dive.missionBriefTitle'), {
+        fontFamily: 'sans-serif',
+        fontSize: '43px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(3003);
+    const body = this.add
+      .text(cx, 286, i18n.t('dive.missionBriefBody'), {
+        fontFamily: 'sans-serif',
+        fontSize: '22px',
+        color: '#cce7ed',
+        align: 'center',
+        wordWrap: { width: 1240, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5)
+      .setDepth(3003);
+    const cardCopy = [
+      'dive.missionBriefStation',
+      'dive.missionBriefSpecies',
+      'dive.missionBriefDevice',
+      'dive.missionBriefReturn',
+    ] as const;
+    const cardObjects: Phaser.GameObjects.GameObject[] = [];
+    cardCopy.forEach((key, index) => {
+      const x = 500 + (index % 2) * 920;
+      const y = 440 + Math.floor(index / 2) * 205;
+      const card = createResearchSurface(this, x, y, 790, 150, {
+        depth: 3002,
+        fill: Palette.cardSoft,
+        border: index === 3 ? Palette.gold : Palette.accentSoft,
+        borderAlpha: 0.48,
+        radius: 20,
+        shadow: false,
+      });
+      const number = this.add
+        .text(x - 330, y, String(index + 1).padStart(2, '0'), {
+          fontFamily: 'monospace',
+          fontSize: '24px',
+          color: index === 3 ? '#f0c95a' : Palette.accentText,
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setDepth(3003);
+      const copy = this.add
+        .text(x - 275, y, i18n.t(key), {
+          fontFamily: 'sans-serif',
+          fontSize: '21px',
+          color: Palette.textLight,
+          lineSpacing: 7,
+          wordWrap: { width: 640, useAdvancedWrap: true },
+        })
+        .setOrigin(0, 0.5)
+        .setDepth(3003);
+      cardObjects.push(card, number, copy);
+    });
+    const hint = this.add
+      .text(cx, 785, i18n.t('dive.missionBriefHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.accentText,
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(3003);
+    const start = new ResearchButton(this, cx, 900, 430, 72, i18n.t('dive.startSurvey'), {
+      tone: 'primary',
+      fontSize: 25,
+      depth: 3004,
+    });
+    start.onPress(() => {
+      this.destroyOverlay();
+      this.briefingOpen = false;
+      this.paused = false;
+      this.showStatus(i18n.t('dive.demoFirstStep'));
+      if (!gameState.tutorialSeen) {
+        gameState.tutorialSeen = true;
+        saveService.save(gameState.toSave());
+      }
+    });
+    this.overlayObjects = [dim, panel, eyebrow, title, body, ...cardObjects, hint, start.root];
   }
 
   /**
@@ -996,8 +1141,6 @@ export class DiveScene extends Phaser.Scene {
         progress: i18n.t('report.foodWebProgress'),
         complete: i18n.t('report.foodWebComplete'),
         wrongZone: i18n.t('report.foodWebWrongZone'),
-        tapSelect: i18n.t('report.foodWebTapSelect'),
-        tapPlace: i18n.t('report.foodWebTapPlace'),
       },
       onComplete: unlockContinue,
     });
@@ -1745,6 +1888,8 @@ export class DiveScene extends Phaser.Scene {
     ] as const;
     cards.forEach((card) => {
       const cardRoot = add(this.add.container(card.x, 665).setDepth(4104).setSize(280, 138));
+      const homeX = card.x;
+      const homeY = 665;
       const cardBack = createResearchSurface(this, 0, 0, 280, 138, {
         fill: card.color,
         border: 0x9cf7ef,
@@ -1774,14 +1919,39 @@ export class DiveScene extends Phaser.Scene {
       }
       children.push(label);
       cardRoot.add(children).setInteractive({ useHandCursor: true });
-      cardRoot.on(Phaser.Input.Events.POINTER_UP, () => {
+      this.input.setDraggable(cardRoot);
+      cardRoot.on(Phaser.Input.Events.GAMEOBJECT_DRAG_START, () => {
         if (!cardRoot.input?.enabled) return;
-        if (card.expected !== step) {
+        cardRoot.setDepth(4120).setScale(1.04);
+        feedback.setColor(Palette.textMuted).setText(i18n.t('report.foodLessonDropHint'));
+      });
+      cardRoot.on(
+        Phaser.Input.Events.GAMEOBJECT_DRAG,
+        (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+          if (!cardRoot.input?.enabled) return;
+          cardRoot.setPosition(dragX, dragY);
+        },
+      );
+      cardRoot.on(Phaser.Input.Events.GAMEOBJECT_DRAG_END, () => {
+        if (!cardRoot.input?.enabled) return;
+        const expectedSlotX = slotXs[step] ?? -9999;
+        const isOverActiveSlot =
+          Math.abs(cardRoot.x - expectedSlotX) <= 150 && Math.abs(cardRoot.y - 455) <= 95;
+        if (card.expected !== step || !isOverActiveSlot) {
           feedback.setColor('#f2a679').setText(i18n.t('report.foodLessonWrong'));
-          this.tweens.add({ targets: cardRoot, x: cardRoot.x + 8, duration: 65, yoyo: true, repeat: 2 });
+          cardRoot.setDepth(4104).setScale(1);
+          this.tweens.add({
+            targets: cardRoot,
+            x: homeX,
+            y: homeY,
+            duration: 220,
+            ease: 'Back.easeOut',
+          });
           return;
         }
+        this.input.setDraggable(cardRoot, false);
         cardRoot.disableInteractive();
+        cardRoot.setDepth(4104).setScale(1);
         this.tweens.add({
           targets: cardRoot,
           x: slotXs[step],
@@ -2987,6 +3157,24 @@ export class DiveScene extends Phaser.Scene {
     crosshairLines.lineBetween(targetX, targetY - 112, targetX, targetY - 40);
     crosshairLines.lineBetween(targetX, targetY + 40, targetX, targetY + 112);
     const targetSpeciesId = this.getViewfinderTargetSpeciesId(target.id);
+    const missionBanner = this.add
+      .text(
+        previewX,
+        previewTop + 22,
+        i18n
+          .t('dive.viewfinderMission')
+          .replace('{species}', this.getSpeciesLabel(targetSpeciesId)),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '18px',
+          color: '#fff3b0',
+          backgroundColor: '#4a391bdd',
+          padding: { x: 14, y: 7 },
+          fontStyle: 'bold',
+        },
+      )
+      .setOrigin(0.5, 0)
+      .setDepth(2808);
     const targetLabel = this.add
       .text(
         targetX,
@@ -3068,6 +3256,7 @@ export class DiveScene extends Phaser.Scene {
       ...previewEnvironment,
       liveBadge,
       liveHint,
+      missionBanner,
       crosshair,
       crosshairLines,
       targetLabel,

@@ -32,6 +32,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   private leftKey: Phaser.Input.Keyboard.Key | null = null;
   private rightKey: Phaser.Input.Keyboard.Key | null = null;
   private targetX: number | null = null;
+  private pendingInteractionZoneId: LabZoneId | null = null;
   private modalRoot: Phaser.GameObjects.Container | null = null;
   private evidenceReviewed = false;
   private sensorUnlocked = false;
@@ -104,6 +105,7 @@ export class Chapter2LabScene extends Phaser.Scene {
 
     if (direction !== 0) {
       this.targetX = null;
+      this.pendingInteractionZoneId = null;
       this.moveScientist(direction, delta);
     } else if (this.targetX !== null) {
       const difference = this.targetX - this.scientist.x;
@@ -111,6 +113,10 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.scientist.x = this.targetX;
         this.targetX = null;
         this.stopScientist();
+        if (this.pendingInteractionZoneId !== null) {
+          this.pendingInteractionZoneId = null;
+          this.time.delayedCall(0, () => this.tryInteract());
+        }
       } else {
         this.moveScientist(Math.sign(difference), delta);
       }
@@ -254,9 +260,19 @@ export class Chapter2LabScene extends Phaser.Scene {
         .setDepth(12);
       const view: LabZoneView = { id, x, hotspot, ring, labelPlate, title, status };
       this.zones.push(view);
-      hotspot.on(Phaser.Input.Events.POINTER_UP, () => {
+      const approachAndInteract = (): void => {
         this.targetX = x;
-      });
+        this.pendingInteractionZoneId = id;
+      };
+      hotspot.on(Phaser.Input.Events.POINTER_UP, approachAndInteract);
+      labelPlate.setInteractive({ useHandCursor: true }).on(
+        Phaser.Input.Events.POINTER_UP,
+        approachAndInteract,
+      );
+      title.setInteractive({ useHandCursor: true }).on(
+        Phaser.Input.Events.POINTER_UP,
+        approachAndInteract,
+      );
       hotspot.on(Phaser.Input.Events.POINTER_OVER, () => hotspot.setFillStyle(0x0d4350, 0.92));
       hotspot.on(Phaser.Input.Events.POINTER_OUT, () => this.refreshZoneStates());
       hotspot.setData('zone', id);
@@ -1635,13 +1651,13 @@ export class Chapter2LabScene extends Phaser.Scene {
       const x = column === 0 ? 610 : 1310;
       const y = 360 + row * 130;
       const card = this.add
-        .rectangle(x, y, 620, 104, index === 6 ? 0x284a3f : 0x0b3343, 0.98)
-        .setStrokeStyle(2, index === 6 ? 0xf0c95a : 0x62b7bd, 0.72);
+        .rectangle(x, y, 620, 104, 0x0b3343, 0.98)
+        .setStrokeStyle(2, 0x62b7bd, 0.72);
       const number = this.add
         .text(x - 270, y, String(index + 1).padStart(2, '0'), {
           fontFamily: 'monospace',
           fontSize: '22px',
-          color: index === 6 ? '#f0c95a' : Palette.accentText,
+          color: Palette.accentText,
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
