@@ -2,7 +2,12 @@ import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, Palette } from '../config/constants';
 import { i18n } from '../i18n/LocaleService';
 import { OxygenGauge } from './OxygenGauge';
-import { chooseHudInteraction, selectCurrentStation, type HudInteraction, type HudStationProgress } from './HudModel';
+import {
+  chooseHudInteraction,
+  selectCurrentStation,
+  type HudInteraction,
+  type HudStationProgress,
+} from './HudModel';
 
 const SAFE_MARGIN = 48;
 const HUD_DEPTH = 900;
@@ -12,7 +17,10 @@ const RESEARCH_Y = 42;
 const RESEARCH_COUNTER_WIDTH = 154;
 const RESEARCH_COUNTER_HEIGHT = 62;
 const RESEARCH_COUNTER_GAP = 12;
-const RESEARCH_COUNTER_X = GAME_WIDTH - SAFE_MARGIN - RESEARCH_COUNTER_WIDTH * 2 - RESEARCH_COUNTER_GAP - 56;
+const RESEARCH_COUNTER_X =
+  GAME_WIDTH - SAFE_MARGIN - RESEARCH_COUNTER_WIDTH * 2 - RESEARCH_COUNTER_GAP - 56;
+const MOVEMENT_HINT_Y = GAME_HEIGHT - 36;
+const MOVEMENT_HINT_MAX_WIDTH = 520;
 
 export interface NormalGameplayHUDState {
   readonly stationProgress: readonly HudStationProgress[];
@@ -41,7 +49,7 @@ export class NormalGameplayHUD {
   private readonly missionProgress: Phaser.GameObjects.Graphics;
   private readonly researchCounters: CounterVisual[];
   private readonly oxygen: OxygenGauge;
-  private readonly controlsHint: Phaser.GameObjects.Text;
+  private readonly movementHint: Phaser.GameObjects.Text;
   private readonly promptBackground: Phaser.GameObjects.Rectangle;
   private readonly promptKeycap: Phaser.GameObjects.Rectangle;
   private readonly promptKey: Phaser.GameObjects.Text;
@@ -66,7 +74,10 @@ export class NormalGameplayHUD {
       .text(SAFE_MARGIN + 18, 111, '', this.textStyle(20, Palette.textMuted, false))
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 1);
-    this.missionProgress = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH + 1);
+    this.missionProgress = scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
 
     this.researchCounters = [
       this.createCounter(RESEARCH_COUNTER_X, RESEARCH_Y, 'camera'),
@@ -78,13 +89,17 @@ export class NormalGameplayHUD {
     ];
 
     this.oxygen = new OxygenGauge(scene, SAFE_MARGIN, GAME_HEIGHT - 82, false);
-    this.controlsHint = scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 36, i18n.t('dive.controlsPersistent'), {
-        ...this.textStyle(18, Palette.textLight, true),
+    // Keep the persistent guidance compact and separate from the contextual
+    // action prompt. Nearby E / SPACE actions are presented by setInteraction,
+    // so this strip only needs to help the player navigate the scene.
+    this.movementHint = scene.add
+      .text(SAFE_MARGIN, MOVEMENT_HINT_Y, i18n.t('dive.controlsPersistent'), {
+        ...this.textStyle(17, Palette.textLight, true),
         backgroundColor: '#04121fcc',
-        padding: { x: 14, y: 8 },
+        padding: { x: 12, y: 7 },
+        wordWrap: { width: MOVEMENT_HINT_MAX_WIDTH, useAdvancedWrap: true },
       })
-      .setOrigin(0.5)
+      .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 2);
 
@@ -103,13 +118,23 @@ export class NormalGameplayHUD {
       .setDepth(HUD_DEPTH + 5)
       .setVisible(false);
     this.promptKey = scene.add
-      .text(GAME_WIDTH - SAFE_MARGIN - 382, GAME_HEIGHT - 70, '', this.textStyle(18, Palette.textLight, true))
+      .text(
+        GAME_WIDTH - SAFE_MARGIN - 382,
+        GAME_HEIGHT - 70,
+        '',
+        this.textStyle(18, Palette.textLight, true),
+      )
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 6)
       .setVisible(false);
     this.promptLabel = scene.add
-      .text(GAME_WIDTH - SAFE_MARGIN - 344, GAME_HEIGHT - 70, '', this.textStyle(21, Palette.textLight, false))
+      .text(
+        GAME_WIDTH - SAFE_MARGIN - 344,
+        GAME_HEIGHT - 70,
+        '',
+        this.textStyle(21, Palette.textLight, false),
+      )
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 5)
@@ -152,6 +177,7 @@ export class NormalGameplayHUD {
 
     this.missionChapter.setText(i18n.t('dive.hudChapter'));
     this.missionTitle.setText(i18n.t('dive.hudMissionTitle'));
+    this.movementHint.setText(i18n.t('dive.controlsPersistent'));
     this.missionStation.setText(
       station === null
         ? i18n.t('dive.hudSurveyComplete')
@@ -179,9 +205,10 @@ export class NormalGameplayHUD {
     vessel: HudInteraction | null,
   ): void {
     const next = chooseHudInteraction(station, subject, vessel);
-    const currentKey = this.currentPrompt === null
-      ? ''
-      : `${this.currentPrompt.kind}|${this.currentPrompt.key}|${this.currentPrompt.label}`;
+    const currentKey =
+      this.currentPrompt === null
+        ? ''
+        : `${this.currentPrompt.kind}|${this.currentPrompt.key}|${this.currentPrompt.label}`;
     const nextKey = next === null ? '' : `${next.kind}|${next.key}|${next.label}`;
     if (currentKey === nextKey) return;
 
@@ -260,7 +287,7 @@ export class NormalGameplayHUD {
 
   destroy(): void {
     this.oxygen.destroy();
-    this.controlsHint.destroy();
+    this.movementHint.destroy();
     this.missionPanel.destroy();
     this.missionChapter.destroy();
     this.missionTitle.destroy();
@@ -306,7 +333,10 @@ export class NormalGameplayHUD {
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH);
-    const iconGraphic = this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH + 1);
+    const iconGraphic = this.scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
     this.drawResearchIcon(iconGraphic, x + 22, y + 27, icon);
     const label = this.scene.add
       .text(x + 42, y + 10, '', this.textStyle(12, Palette.textMuted, true))
@@ -319,12 +349,22 @@ export class NormalGameplayHUD {
     return { background, icon: iconGraphic, label, value };
   }
 
-  private updateCounter(counter: CounterVisual, label: string, current: number, goal: number): void {
+  private updateCounter(
+    counter: CounterVisual,
+    label: string,
+    current: number,
+    goal: number,
+  ): void {
     counter.label.setText(label.toUpperCase());
     counter.value.setText(`${Math.min(current, goal)} / ${goal}`);
   }
 
-  private drawResearchIcon(graphic: Phaser.GameObjects.Graphics, x: number, y: number, icon: 'camera' | 'fish'): void {
+  private drawResearchIcon(
+    graphic: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    icon: 'camera' | 'fish',
+  ): void {
     graphic.clear();
     if (icon === 'camera') {
       graphic.lineStyle(2, 0x35d5d0, 0.95);
@@ -348,7 +388,11 @@ export class NormalGameplayHUD {
     return separator >= 0 ? displayName.slice(separator + 1).trim() : displayName;
   }
 
-  private textStyle(fontSize: number, color: string, bold: boolean): Phaser.Types.GameObjects.Text.TextStyle {
+  private textStyle(
+    fontSize: number,
+    color: string,
+    bold: boolean,
+  ): Phaser.Types.GameObjects.Text.TextStyle {
     return {
       fontFamily: 'sans-serif',
       fontSize: `${fontSize}px`,

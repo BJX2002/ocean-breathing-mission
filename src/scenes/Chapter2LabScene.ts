@@ -5,6 +5,18 @@ import { CHAPTER2_SCIENTIST_FRAME_KEYS } from '../graphics/assetManifest';
 import { i18n } from '../i18n/LocaleService';
 import { gameState } from '../state/GameState';
 import type { DepthZone, Sensor } from '../types';
+import {
+  DEMO_LOW_OXYGEN_THRESHOLD_MG_L,
+  DEMO_DEPLOYMENT_SCENARIO,
+  demoDoValueAtGridIndex,
+  deploymentCost,
+  evaluateDeployment,
+  gridPlacement,
+  providesContinuousCoverage,
+  sensorSupportsDepth,
+  type DeploymentEvaluation,
+} from '../simulation/DeploymentRules';
+import { DoTimelineChart } from '../ui/DoTimelineChart';
 import { createResearchSurface, ResearchButton } from '../ui/ResearchUi';
 
 type LabZoneId = 'evidence' | 'workbench' | 'console';
@@ -48,7 +60,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   private readonly deploymentPlacements = new Map<number, string>();
   private deploymentRunComplete = false;
   private deploymentDetectedEvent = false;
-  private readonly taskGuidesSeen = new Set<LabZoneId>();
+  private monitoringComparisonComplete = false;
 
   constructor() {
     super(SceneKeys.Chapter2Lab);
@@ -85,7 +97,14 @@ export class Chapter2LabScene extends Phaser.Scene {
       if (requested === 'deployment') {
         this.evidenceReviewed = true;
         this.sensorUnlocked = true;
-        this.showConsoleModal();
+        this.monitoringComparisonComplete = true;
+        this.showDeploymentModal();
+        return;
+      }
+      if (requested === 'comparison') {
+        this.evidenceReviewed = true;
+        this.sensorUnlocked = true;
+        this.showMonitoringComparisonModal();
         return;
       }
       if (requested === 'summary') {
@@ -265,14 +284,12 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.pendingInteractionZoneId = id;
       };
       hotspot.on(Phaser.Input.Events.POINTER_UP, approachAndInteract);
-      labelPlate.setInteractive({ useHandCursor: true }).on(
-        Phaser.Input.Events.POINTER_UP,
-        approachAndInteract,
-      );
-      title.setInteractive({ useHandCursor: true }).on(
-        Phaser.Input.Events.POINTER_UP,
-        approachAndInteract,
-      );
+      labelPlate
+        .setInteractive({ useHandCursor: true })
+        .on(Phaser.Input.Events.POINTER_UP, approachAndInteract);
+      title
+        .setInteractive({ useHandCursor: true })
+        .on(Phaser.Input.Events.POINTER_UP, approachAndInteract);
       hotspot.on(Phaser.Input.Events.POINTER_OVER, () => hotspot.setFillStyle(0x0d4350, 0.92));
       hotspot.on(Phaser.Input.Events.POINTER_OUT, () => this.refreshZoneStates());
       hotspot.setData('zone', id);
@@ -441,7 +458,6 @@ export class Chapter2LabScene extends Phaser.Scene {
     if (nextHighlighted !== this.highlightedZoneId) {
       this.highlightedZoneId = nextHighlighted;
       this.refreshZoneStates();
-      this.updateScientistBubble(nextHighlighted);
     }
   }
 
@@ -469,10 +485,6 @@ export class Chapter2LabScene extends Phaser.Scene {
       this.showToast(i18n.t('lab.lockedWorkbenchFirst'));
       return;
     }
-    if (!this.taskGuidesSeen.has(zone.id)) {
-      this.showTaskGuide(zone.id);
-      return;
-    }
     this.openLabZone(zone.id);
   }
 
@@ -487,65 +499,6 @@ export class Chapter2LabScene extends Phaser.Scene {
       return;
     }
     this.showConsoleModal();
-  }
-
-  private showTaskGuide(zoneId: LabZoneId): void {
-    const copy =
-      zoneId === 'evidence'
-        ? {
-            number: '01',
-            title: 'lab.taskGuideEvidenceTitle',
-            body: 'lab.taskGuideEvidenceBody',
-            glyph: 'DRAG',
-          }
-        : zoneId === 'workbench'
-          ? {
-              number: '02',
-              title: 'lab.taskGuidePrincipleTitle',
-              body: 'lab.taskGuidePrincipleBody',
-              glyph: 'O₂ → DO',
-            }
-          : {
-              number: '03',
-              title: 'lab.taskGuideBudgetTitle',
-              body: 'lab.taskGuideBudgetBody',
-              glyph: '$ / 24h',
-            };
-    const root = this.createModal(
-      `${i18n.t('lab.taskGuideEyebrow')}  /  ${copy.number}`,
-      i18n.t(copy.title),
-      i18n.t(copy.body),
-      1320,
-      700,
-    );
-    const visual = this.add
-      .rectangle(960, 555, 500, 170, 0x0c3b4a, 1)
-      .setStrokeStyle(3, 0xf0c95a, 0.78);
-    const glyph = this.add
-      .text(960, 535, copy.glyph, {
-        fontFamily: 'monospace',
-        fontSize: '42px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-    const control = this.add
-      .text(960, 610, i18n.t('lab.taskGuideControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: '#bfe9ed',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    root.add([visual, glyph, control]);
-    this.addModalButton(root, 960, 785, 430, i18n.t('lab.taskGuideStart'), true, () => {
-      this.taskGuidesSeen.add(zoneId);
-      this.closeModal();
-      this.time.delayedCall(0, () => this.openLabZone(zoneId));
-    });
-    this.addModalButton(root, 520, 785, 260, i18n.t('common.backStep'), false, () => {
-      this.closeModal();
-    });
   }
 
   private refreshZoneStates(): void {
@@ -591,6 +544,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       highlighted?.hotspot.setStrokeStyle(3, 0xf4df78, 1);
       highlighted?.ring.setStrokeStyle(3, 0xf4df78, 0.72);
     }
+    this.updateScientistBubble(this.highlightedZoneId);
   }
 
   private showEvidenceModal(): void {
@@ -857,6 +811,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalButton(root, 1060, 836, 460, i18n.t('lab.introStart'), true, () => {
       this.closeModal();
       this.targetX = 300;
+      this.pendingInteractionZoneId = 'evidence';
     });
     this.addModalButton(root, 520, 836, 290, i18n.t('common.backStep'), false, () => {
       this.scene.start(SceneKeys.Menu, { screen: 'chapters' });
@@ -1153,6 +1108,193 @@ export class Chapter2LabScene extends Phaser.Scene {
   }
 
   private showConsoleModal(): void {
+    if (!this.monitoringComparisonComplete) {
+      this.showMonitoringComparisonModal();
+      return;
+    }
+    this.showDeploymentModal();
+  }
+
+  private showMonitoringComparisonModal(): void {
+    const root = this.createModal(
+      i18n.t('lab.compareEyebrow'),
+      i18n.t('lab.compareTitle'),
+      i18n.t('lab.compareBody'),
+      1640,
+      920,
+    );
+    const sensors = gameState.getData().sensors;
+    const vessel = sensors.find((sensor) => sensor.id === 'vessel-sampling');
+    const sensingFilm = sensors.find((sensor) => sensor.id === 'sensing-film-node');
+    const sensorName = (sensor: Sensor | undefined): string => {
+      if (sensor === undefined) return '';
+      return i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh;
+    };
+
+    const methodSurface = createResearchSurface(this, 350, 565, 340, 430, {
+      fill: Palette.cardSoft,
+      border: Palette.gold,
+      borderAlpha: 0.46,
+      radius: 24,
+      shadow: false,
+    });
+    const methodHalo = this.add.circle(350, 475, 72, Palette.gold, 0.11);
+    const methodGlyph = this.add.graphics().setPosition(350, 475);
+    const methodType = this.add
+      .text(350, 375, '', {
+        fontFamily: 'monospace',
+        fontSize: '16px',
+        color: '#f5d778',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    const methodTitle = this.add
+      .text(350, 565, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '26px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 280, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    const promptText = this.add
+      .text(350, 630, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '21px',
+        color: '#c8e3e8',
+        align: 'center',
+        lineSpacing: 5,
+        wordWrap: { width: 280, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5, 0);
+    const resultText = this.add
+      .text(350, 770, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '18px',
+        color: '#f4d678',
+        fontStyle: 'bold',
+        align: 'center',
+        lineSpacing: 4,
+        wordWrap: { width: 286, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5, 1);
+    const stageText = this.add.text(560, 326, '', {
+      fontFamily: 'monospace',
+      fontSize: '18px',
+      color: Palette.accentText,
+      fontStyle: 'bold',
+      backgroundColor: '#102f3ddd',
+      padding: { x: 12, y: 7 },
+    });
+    root.add([
+      methodSurface,
+      methodHalo,
+      methodGlyph,
+      methodType,
+      methodTitle,
+      promptText,
+      resultText,
+      stageText,
+    ]);
+
+    const chart = new DoTimelineChart(
+      this,
+      root,
+      { x: 555, y: 370, width: 1110, height: 450 },
+      {
+        thresholdMgPerL: DEMO_LOW_OXYGEN_THRESHOLD_MG_L,
+        copy: {
+          title: i18n.t('lab.chartTitle'),
+          unit: i18n.t('lab.chartUnit'),
+          emptyStatus: i18n.t('lab.chartWaiting'),
+          emptyPrompt: i18n.t('lab.chartEmptyPrompt'),
+          manualStatus: i18n.t('lab.chartManualStatus'),
+          manualHint: i18n.t('lab.chartManualHint'),
+          continuousStatus: i18n.t('lab.chartContinuousStatus'),
+          continuousHint: i18n.t('lab.chartContinuousHint'),
+          sampleLabel: i18n.t('lab.chartManualPoint'),
+          detectedLabel: i18n.t('lab.chartDetected'),
+          thresholdLabel: i18n.t('lab.chartAlert'),
+          dawnLabel: i18n.t('lab.chartDawn'),
+        },
+      },
+    );
+
+    type ComparisonStep = 'manual-ready' | 'manual-result' | 'sensor-ready' | 'sensor-result';
+    let step: ComparisonStep = 'manual-ready';
+    const actionButton = new ResearchButton(this, 1280, 930, 510, 70, '', {
+      tone: 'primary',
+      fontSize: 22,
+    });
+    root.add(actionButton.root);
+    this.addModalButton(root, 350, 930, 260, i18n.t('common.backStep'), false, () =>
+      this.closeModal(),
+    );
+
+    const renderStep = (): void => {
+      const manual = step === 'manual-ready' || step === 'manual-result';
+      const activeSensor = manual ? vessel : sensingFilm;
+      methodGlyph.clear();
+      if (activeSensor !== undefined) {
+        this.drawDeviceGlyph(
+          methodGlyph,
+          activeSensor,
+          manual ? 1.65 : 1.5,
+          manual ? 0xf5d778 : 0x9cf4e5,
+        );
+      }
+      methodHalo.setFillStyle(manual ? Palette.gold : Palette.accent, 0.12);
+      methodType
+        .setText(manual ? i18n.t('lab.deviceSingle') : i18n.t('lab.deviceContinuous'))
+        .setColor(manual ? '#f5d778' : '#8ff0df');
+      methodTitle.setText(sensorName(activeSensor));
+      stageText.setText(i18n.t(manual ? 'lab.compareManualStage' : 'lab.compareSensorStage'));
+
+      if (step === 'manual-ready') {
+        promptText.setText(i18n.t('lab.compareManualPrompt'));
+        resultText.setText('');
+        actionButton.setText(i18n.t('lab.compareManualRun'));
+        chart.showEmpty();
+        return;
+      }
+      if (step === 'manual-result') {
+        promptText.setText(i18n.t('lab.compareManualPrompt'));
+        resultText.setText(i18n.t('lab.compareManualResult')).setColor('#f4d678');
+        actionButton.setText(i18n.t('lab.compareSwitchSensor'));
+        chart.showManualSample({ hour: 14, value: 6.1 });
+        return;
+      }
+      if (step === 'sensor-ready') {
+        promptText.setText(i18n.t('lab.compareSensorPrompt'));
+        resultText.setText('');
+        actionButton.setText(i18n.t('lab.compareSensorRun'));
+        chart.showEmpty();
+        return;
+      }
+      promptText.setText(i18n.t('lab.compareSensorPrompt'));
+      resultText.setText(i18n.t('lab.compareSensorResult')).setColor('#aaf2bb');
+      actionButton.setText(i18n.t('lab.compareStartNetwork'));
+      chart.showContinuousSeries();
+    };
+
+    actionButton.onPress(() => {
+      if (step === 'manual-ready') step = 'manual-result';
+      else if (step === 'manual-result') step = 'sensor-ready';
+      else if (step === 'sensor-ready') {
+        step = 'sensor-result';
+        this.monitoringComparisonComplete = true;
+      } else {
+        this.showDeploymentModal();
+        return;
+      }
+      renderStep();
+    });
+    renderStep();
+  }
+
+  private showDeploymentModal(): void {
     const root = this.createModal(
       i18n.t('lab.consoleEyebrow'),
       i18n.t('lab.consoleTitle'),
@@ -1161,15 +1303,17 @@ export class Chapter2LabScene extends Phaser.Scene {
       940,
     );
     const sensors = gameState.getData().sensors;
-    const initialSensor = sensors.find((sensor) => sensor.id === 'sensing-film-node') ?? sensors[0];
-    if (initialSensor === undefined) return;
+    const availableSensors = sensors.filter((sensor) =>
+      ['vessel-sampling', 'fixed-probe', 'sensing-film-node'].includes(sensor.id),
+    );
+    if (availableSensors.length === 0) return;
 
-    let selectedSensor: Sensor = initialSensor;
-    const totalBudget = 3600;
-    const deploymentCost = (sensor: Sensor): number => sensor.unitCost + sensor.maintenanceCost;
+    let selectedSensor: Sensor | null = null;
+    const totalBudget = DEMO_DEPLOYMENT_SCENARIO.budget;
     let simulationTween: Phaser.Tweens.Tween | null = null;
     let summaryButton: Phaser.GameObjects.Container | null = null;
     let successCelebrationPlayed = false;
+    let simulationRunning = false;
     const placements = new Map<number, Sensor>();
     this.deploymentPlacements.forEach((sensorId, index) => {
       const sensor = sensors.find((candidate) => candidate.id === sensorId);
@@ -1180,6 +1324,13 @@ export class Chapter2LabScene extends Phaser.Scene {
       panel: Phaser.GameObjects.Rectangle;
       glyph: Phaser.GameObjects.Graphics;
     }> = [];
+    const goalDefinitions = [
+      { key: 'continuousRecording' as const, label: 'lab.goalContinuous' },
+      { key: 'allLocationsCovered' as const, label: 'lab.goalLocations' },
+      { key: 'multipleDepthsCovered' as const, label: 'lab.goalDepths' },
+      { key: 'eventDetected' as const, label: 'lab.goalEvent' },
+      { key: 'withinBudget' as const, label: 'lab.goalBudget' },
+    ];
     const points: Array<{
       point: Phaser.GameObjects.Arc;
       ring: Phaser.GameObjects.Arc;
@@ -1218,15 +1369,39 @@ export class Chapter2LabScene extends Phaser.Scene {
       })
       .setOrigin(1, 0);
     const selectedText = this.add
-      .text(1030, 850, '', {
+      .text(1265, 850, '', {
         fontFamily: 'sans-serif',
         fontSize: '19px',
         color: '#d6f4f5',
         align: 'center',
-        wordWrap: { width: 790, useAdvancedWrap: true },
+        wordWrap: { width: 980, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
     root.add([equipmentTitle, deploymentTitle, budgetText, timeText, selectedText]);
+
+    const goalsSurface = createResearchSurface(this, 390, 805, 540, 172, {
+      fill: Palette.cardSoft,
+      border: Palette.accent,
+      borderAlpha: 0.34,
+      radius: 18,
+      shadow: false,
+    });
+    const goalsTitle = this.add.text(145, 728, i18n.t('lab.goalTitle'), {
+      fontFamily: 'monospace',
+      fontSize: '17px',
+      color: '#f0c95a',
+      fontStyle: 'bold',
+    });
+    const goalRows = goalDefinitions.map((goal, index) => {
+      const row = this.add.text(150, 758 + index * 26, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '17px',
+        color: '#789aa8',
+        fontStyle: 'bold',
+      });
+      return { ...goal, row };
+    });
+    root.add([goalsSurface, goalsTitle, ...goalRows.map(({ row }) => row)]);
 
     const ocean = this.add.graphics();
     ocean.fillGradientStyle(0x0e6683, 0x0e6683, 0x08283c, 0x08283c, 0.92, 0.92, 0.98, 0.98);
@@ -1256,23 +1431,15 @@ export class Chapter2LabScene extends Phaser.Scene {
     ocean.strokePath();
     root.add(ocean);
 
-    for (let index = 0; index < 12; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       const bubble = this.add.circle(
-        820 + index * 78,
-        700 - (index % 4) * 58,
+        875 + index * 194,
+        690 - (index % 3) * 74,
         3 + (index % 3),
         0xa5f3ef,
-        0.22,
+        0.16,
       );
       root.add(bubble);
-      this.tweens.add({
-        targets: bubble,
-        y: bubble.y - 22,
-        alpha: 0.05,
-        duration: 1400 + index * 55,
-        yoyo: true,
-        repeat: -1,
-      });
     }
 
     const raft = this.add.graphics();
@@ -1341,6 +1508,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         points.push({ point, ring, heat, glyph, value });
         root.add([heat, ring, point, glyph, value]);
         point.on(Phaser.Input.Events.POINTER_UP, () => {
+          if (simulationRunning) return;
           if (placements.has(index)) {
             placements.delete(index);
             this.deploymentPlacements.delete(index);
@@ -1348,6 +1516,10 @@ export class Chapter2LabScene extends Phaser.Scene {
             this.deploymentDetectedEvent = false;
             summaryButton?.setVisible(false);
             render();
+            return;
+          }
+          if (selectedSensor === null) {
+            selectedText.setText(i18n.t('lab.selectDeviceFirst')).setColor('#ffcf78');
             return;
           }
           const usedBudget = [...placements.values()].reduce(
@@ -1359,7 +1531,7 @@ export class Chapter2LabScene extends Phaser.Scene {
             return;
           }
           const targetDepth = depthValues[row];
-          if (targetDepth !== undefined && !this.sensorSupportsDepth(selectedSensor, targetDepth)) {
+          if (targetDepth !== undefined && !sensorSupportsDepth(selectedSensor, targetDepth)) {
             selectedText
               .setText(this.format('lab.depthLimit', { name: sensorName(selectedSensor) }))
               .setColor('#ffcf78');
@@ -1377,34 +1549,47 @@ export class Chapter2LabScene extends Phaser.Scene {
 
     const sensorName = (sensor: Sensor): string =>
       i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh;
-    sensors.forEach((sensor, index) => {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const x = 260 + column * 285;
-      const y = 432 + row * 106;
+    const depthLabel = (depth: DepthZone): string => {
+      const keyByDepth: Record<DepthZone, string> = {
+        surface: 'lab.depthSurface',
+        mid: 'lab.depthMid',
+        bottom: 'lab.depthBottom',
+      };
+      return i18n.t(keyByDepth[depth] ?? 'lab.depthBottom');
+    };
+    availableSensors.forEach((sensor, index) => {
+      const x = 390;
+      const y = 410 + index * 110;
       const panel = this.add
-        .rectangle(x, y, 260, 86, 0x0a2c3b, 0.94)
+        .rectangle(x, y, 540, 92, 0x0a2c3b, 0.94)
         .setStrokeStyle(2, 0x507b89, 0.62)
         .setInteractive({ useHandCursor: true });
-      const glyph = this.add.graphics().setPosition(x - 96, y);
-      this.drawDeviceGlyph(glyph, sensor, 0.72, 0x9bded8);
-      const title = this.add.text(x - 58, y - 28, sensorName(sensor), {
+      const glyph = this.add.graphics().setPosition(x - 220, y);
+      this.drawDeviceGlyph(glyph, sensor, 0.78, 0x9bded8);
+      const title = this.add.text(x - 165, y - 31, sensorName(sensor), {
         fontFamily: 'sans-serif',
-        fontSize: '17px',
+        fontSize: '19px',
         color: Palette.textLight,
         fontStyle: 'bold',
-        wordWrap: { width: 172, useAdvancedWrap: true },
+        wordWrap: { width: 350, useAdvancedWrap: true },
+      });
+      const mode = i18n.t(sensor.continuous ? 'lab.deviceContinuous' : 'lab.deviceSingle');
+      const detail = sensor.continuous
+        ? this.format('lab.deviceEvery', { minutes: String(sensor.samplingIntervalMinutes) })
+        : '';
+      const maximumDepth = this.format('lab.deviceMaxDepth', {
+        depth: depthLabel(sensor.maxDepthZone),
       });
       const values = this.add.text(
-        x - 58,
-        y + 9,
-        `${i18n.t('lab.cost')} ${sensor.unitCost} + ${i18n.t('lab.maintenance')} ${sensor.maintenanceCost}\n${i18n.t('lab.firstDayFee')} ${deploymentCost(sensor)}`,
-        { fontFamily: 'monospace', fontSize: '13px', color: '#a9cbd4', lineSpacing: 3 },
+        x - 165,
+        y + 4,
+        `$${deploymentCost(sensor)}  ·  ${mode}\n${detail === '' ? maximumDepth : `${detail}  ·  ${maximumDepth}`}`,
+        { fontFamily: 'monospace', fontSize: '14px', color: '#a9cbd4', lineSpacing: 4 },
       );
       const badge =
         sensor.id === 'sensing-film-node'
           ? this.add
-              .text(x + 112, y - 36, i18n.t('lab.newPart'), {
+              .text(x + 252, y - 37, i18n.t('lab.newPart'), {
                 fontFamily: 'monospace',
                 fontSize: '11px',
                 color: '#09231f',
@@ -1417,18 +1602,12 @@ export class Chapter2LabScene extends Phaser.Scene {
       root.add([panel, glyph, title, values]);
       if (badge !== null) root.add(badge);
       panel.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (simulationRunning) return;
         selectedSensor = sensor;
         render();
       });
     });
 
-    const demoBadge = this.add.text(120, 775, i18n.t('lab.demoData'), {
-      fontFamily: 'monospace',
-      fontSize: '15px',
-      color: '#f7d85c',
-      backgroundColor: '#3b3420',
-      padding: { x: 10, y: 6 },
-    });
     const hint = this.add
       .text(960, 982, i18n.t('lab.previewHint'), {
         fontFamily: 'sans-serif',
@@ -1438,25 +1617,18 @@ export class Chapter2LabScene extends Phaser.Scene {
         wordWrap: { width: 1380, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
-    root.add([demoBadge, hint]);
-    this.addModalButton(root, 1660, 930, 220, i18n.t('common.backStep'), false, () => this.closeModal());
+    root.add(hint);
+    this.addModalButton(root, 1660, 930, 220, i18n.t('common.backStep'), false, () =>
+      this.closeModal(),
+    );
     this.addModalButton(root, 230, 930, 250, i18n.t('lab.backToMenu'), false, () => {
       this.scene.start(SceneKeys.Menu, { screen: 'chapters' });
     });
 
-    const oxygenValue = (index: number, hour: number): number => {
-      const row = Math.floor(index / 3);
-      const column = index % 3;
-      const base = [7.3, 6.5, 5.9][row] ?? 6.5;
-      const nightEvent = Math.exp(-Math.pow(hour - 5, 2) / 10);
-      const depthImpact = [0.22, 1.12, 2.65][row] ?? 1;
-      const siteImpact = [0.62, 1, 0.82][column] ?? 0.8;
-      return Phaser.Math.Clamp(base - nightEvent * depthImpact * siteImpact, 1.8, 8.5);
-    };
     const oxygenColor = (value: number): number =>
-      value >= 5.5 ? 0x52d9c6 : value >= 4 ? 0xf0c95a : 0xf47e68;
+      value >= 5.5 ? 0x52d9c6 : value >= DEMO_LOW_OXYGEN_THRESHOLD_MG_L ? 0xf0c95a : 0xf47e68;
     const oxygenTextColor = (value: number): string =>
-      value >= 5.5 ? '#83f2df' : value >= 4 ? '#ffd873' : '#ff9b88';
+      value >= 5.5 ? '#83f2df' : value >= DEMO_LOW_OXYGEN_THRESHOLD_MG_L ? '#ffd873' : '#ff9b88';
 
     const updateSimulationVisual = (hour: number): void => {
       timeText.setText(
@@ -1469,7 +1641,18 @@ export class Chapter2LabScene extends Phaser.Scene {
           value.setText('?').setColor('#718a94').setVisible(true);
           return;
         }
-        const reading = oxygenValue(index, hour);
+        const hasReadingNow = providesContinuousCoverage(sensor) || Math.abs(hour - 14) <= 0.7;
+        if (!hasReadingNow) {
+          heat.setFillStyle(0x6e8690, 0.05);
+          value.setText('?').setColor('#718a94').setVisible(true);
+          return;
+        }
+        const reading = demoDoValueAtGridIndex(index, hour);
+        if (reading === null) {
+          heat.setFillStyle(0x6e8690, 0.05);
+          value.setText('?').setColor('#718a94').setVisible(true);
+          return;
+        }
         const color = oxygenColor(reading);
         heat.setAlpha(1).setFillStyle(color, 0.25);
         value
@@ -1477,6 +1660,14 @@ export class Chapter2LabScene extends Phaser.Scene {
           .setColor(oxygenTextColor(reading))
           .setVisible(true);
       });
+    };
+
+    const evaluateCurrentDeployment = (): DeploymentEvaluation => {
+      const deployed = [...placements.entries()].flatMap(([index, sensor]) => {
+        const placement = gridPlacement(index, sensor);
+        return placement === null ? [] : [placement];
+      });
+      return evaluateDeployment(deployed, DEMO_DEPLOYMENT_SCENARIO);
     };
 
     const playSuccessCelebration = (): void => {
@@ -1502,9 +1693,9 @@ export class Chapter2LabScene extends Phaser.Scene {
         duration: 420,
         ease: 'Back.Out',
       });
-      for (let index = 0; index < 18; index += 1) {
-        const startX = 820 + ((index * 83) % 860);
-        const startY = 380 + ((index * 47) % 360);
+      for (let index = 0; index < 6; index += 1) {
+        const startX = 870 + index * 150;
+        const startY = 410 + (index % 3) * 120;
         const sparkle = this.add
           .text(startX, startY, index % 3 === 0 ? '✦' : '·', {
             fontFamily: 'sans-serif',
@@ -1530,11 +1721,13 @@ export class Chapter2LabScene extends Phaser.Scene {
     };
 
     const runSimulation = (): void => {
+      if (simulationRunning) return;
       if (placements.size === 0) {
         selectedText.setText(i18n.t('lab.simNeedSensor')).setColor('#ffcf78');
         return;
       }
       simulationTween?.stop();
+      simulationRunning = true;
       runButton.setAlpha(0.52);
       selectedText.setText(i18n.t('lab.simRunning')).setColor('#8debe3');
       simulationTween = this.tweens.addCounter({
@@ -1546,17 +1739,16 @@ export class Chapter2LabScene extends Phaser.Scene {
         onComplete: () => {
           updateSimulationVisual(5);
           timeText.setText(i18n.t('lab.simSummaryTime'));
-          const detectsNearBedEvent = placements.has(7) || placements.has(8);
+          const evaluation = evaluateCurrentDeployment();
           this.deploymentRunComplete = true;
-          this.deploymentDetectedEvent = detectsNearBedEvent;
-          this.consoleVisited = true;
+          this.deploymentDetectedEvent = evaluation.success;
+          if (evaluation.success) this.consoleVisited = true;
           this.refreshZoneStates();
-          selectedText
-            .setText(detectsNearBedEvent ? i18n.t('lab.simDetected') : i18n.t('lab.simMissed'))
-            .setColor(detectsNearBedEvent ? '#91e6a7' : '#ffcf78');
-          if (detectsNearBedEvent) playSuccessCelebration();
+          simulationRunning = false;
+          render();
+          if (evaluation.success) playSuccessCelebration();
           runButton.setAlpha(1);
-          summaryButton?.setVisible(detectsNearBedEvent);
+          summaryButton?.setVisible(evaluation.success);
         },
       });
     };
@@ -1569,42 +1761,83 @@ export class Chapter2LabScene extends Phaser.Scene {
       true,
       runSimulation,
     );
-    summaryButton = this.addModalButton(
-      root,
-      1020,
-      930,
-      300,
-      i18n.t('lab.viewSummary'),
-      true,
-      () => this.showLearningSummary(),
+    summaryButton = this.addModalButton(root, 1020, 930, 300, i18n.t('lab.viewSummary'), true, () =>
+      this.showLearningSummary(),
     ).setVisible(this.deploymentDetectedEvent);
 
     const render = (): void => {
-      const usedBudget = [...placements.values()].reduce(
-        (sum, sensor) => sum + deploymentCost(sensor),
-        0,
+      const evaluation = evaluateCurrentDeployment();
+      budgetText.setText(
+        `${i18n.t('lab.budget')}  $${evaluation.remainingBudget} / $${totalBudget}`,
       );
-      budgetText.setText(`${i18n.t('lab.budget')}  ${totalBudget - usedBudget} / ${totalBudget}`);
-      selectedText
-        .setText(this.format('lab.selectDevice', { name: sensorName(selectedSensor) }))
-        .setColor('#d6f4f5');
+
+      if (this.deploymentRunComplete) {
+        const missingGoals = goalRows
+          .filter(({ key }) => !evaluation.goals[key])
+          .map(({ label }) => i18n.t(label));
+        selectedText
+          .setText(
+            evaluation.success
+              ? i18n.t('lab.simDetected')
+              : this.format('lab.goalsMissingPrefix', { goals: missingGoals.join(' · ') }),
+          )
+          .setColor(evaluation.success ? '#91e6a7' : '#ffcf78');
+      } else if (selectedSensor === null) {
+        selectedText.setText(i18n.t('lab.selectDeviceFirst')).setColor('#d6f4f5');
+      } else {
+        selectedText
+          .setText(
+            this.format('lab.placeDeviceNext', {
+              name: sensorName(selectedSensor),
+            }),
+          )
+          .setColor('#d6f4f5');
+      }
+
+      goalRows.forEach(({ key, label, row }) => {
+        const pending = key === 'eventDetected' && !this.deploymentRunComplete;
+        const waitingForFirstPlacement = key === 'withinBudget' && placements.size === 0;
+        const complete = !pending && !waitingForFirstPlacement && evaluation.goals[key];
+        row
+          .setText(`${pending ? '?' : complete ? '✓' : '○'}  ${i18n.t(label)}`)
+          .setColor(pending ? '#f0c95a' : complete ? '#91e6a7' : '#789aa8');
+      });
       equipmentCards.forEach(({ sensor, panel, glyph }) => {
-        const selected = sensor.id === selectedSensor.id;
+        const selected = sensor.id === selectedSensor?.id;
         panel
           .setFillStyle(selected ? 0x124b50 : 0x0a2c3b, 0.98)
           .setStrokeStyle(selected ? 3 : 2, selected ? 0x8ff0df : 0x507b89, selected ? 1 : 0.62);
-        this.drawDeviceGlyph(glyph, sensor, 0.72, selected ? 0xc8fff5 : 0x7ea5af);
+        this.drawDeviceGlyph(glyph, sensor, 0.78, selected ? 0xc8fff5 : 0x7ea5af);
       });
       points.forEach(({ point, ring, heat, glyph, value }, index) => {
         const sensor = placements.get(index);
         glyph.clear();
         if (sensor === undefined) {
-          point.setFillStyle(0x092735, 0.94).setStrokeStyle(2, 0x8edbd7, 0.5);
-          ring.setStrokeStyle(2, 0x8edbd7, 0.2);
-          glyph.lineStyle(3, 0x78a3ad, 0.72).lineBetween(-8, 0, 8, 0).lineBetween(0, -8, 0, 8);
+          const targetDepth = depthValues[Math.floor(index / 3)];
+          const supported =
+            selectedSensor === null ||
+            targetDepth === undefined ||
+            sensorSupportsDepth(selectedSensor, targetDepth);
+          point
+            .setAlpha(supported ? 1 : 0.32)
+            .setFillStyle(0x092735, 0.94)
+            .setStrokeStyle(
+              2,
+              selectedSensor === null ? 0x718a94 : 0x8edbd7,
+              supported ? 0.64 : 0.2,
+            );
+          ring
+            .setAlpha(supported ? 1 : 0.25)
+            .setStrokeStyle(2, 0x8edbd7, selectedSensor === null ? 0.12 : 0.28);
+          glyph
+            .lineStyle(3, selectedSensor === null ? 0x617b86 : 0x9bded8, supported ? 0.82 : 0.26)
+            .lineBetween(-8, 0, 8, 0)
+            .lineBetween(0, -8, 0, 8);
           heat.setAlpha(0);
           value.setVisible(false);
         } else {
+          point.setAlpha(1);
+          ring.setAlpha(1);
           point.setFillStyle(0x164840, 0.98).setStrokeStyle(3, 0x8ce6a3, 1);
           ring.setStrokeStyle(2, 0x8ce6a3, 0.55);
           this.drawDeviceGlyph(glyph, sensor, 0.48, 0xd9fff1);
@@ -1619,12 +1852,11 @@ export class Chapter2LabScene extends Phaser.Scene {
       if (this.deploymentRunComplete) {
         updateSimulationVisual(5);
         timeText.setText(i18n.t('lab.simSummaryTime'));
+      } else if (!simulationRunning) {
+        timeText.setText(this.format('lab.simTime', { hour: '00:00' }));
       }
     };
     render();
-    if (this.deploymentRunComplete) {
-      selectedText.setText(i18n.t('lab.simComplete')).setColor('#91e6a7');
-    }
     root.once('destroy', () => simulationTween?.stop());
   }
 
@@ -1636,41 +1868,66 @@ export class Chapter2LabScene extends Phaser.Scene {
       1580,
       900,
     );
-    const items = [
-      'lab.summaryCompare',
-      'lab.summaryFoodWeb',
-      'lab.summaryGills',
-      'lab.summaryDo',
-      'lab.summaryLimits',
-      'lab.summaryNetwork',
-      'lab.summaryFilm',
+    const themes = [
+      {
+        mark: 'O₂',
+        title: 'lab.summaryOceanTitle',
+        body: 'lab.summaryOceanBody',
+        color: 0x65cbea,
+      },
+      {
+        mark: '✓',
+        title: 'lab.summaryEvidenceTitle',
+        body: 'lab.summaryEvidenceBody',
+        color: 0xf0c95a,
+      },
+      {
+        mark: '24h',
+        title: 'lab.summarySensorTitle',
+        body: 'lab.summarySensorBody',
+        color: 0x91e6a7,
+      },
     ] as const;
-    items.forEach((key, index) => {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const x = column === 0 ? 610 : 1310;
-      const y = 360 + row * 130;
-      const card = this.add
-        .rectangle(x, y, 620, 104, 0x0b3343, 0.98)
-        .setStrokeStyle(2, 0x62b7bd, 0.72);
-      const number = this.add
-        .text(x - 270, y, String(index + 1).padStart(2, '0'), {
+    themes.forEach((theme, index) => {
+      const x = 490 + index * 470;
+      const card = createResearchSurface(this, x, 565, 420, 320, {
+        fill: Palette.cardSoft,
+        border: theme.color,
+        borderAlpha: 0.62,
+        radius: 24,
+        shadow: false,
+      });
+      const markBubble = this.add
+        .circle(x, 475, 42, theme.color, 0.16)
+        .setStrokeStyle(2, theme.color, 0.72);
+      const mark = this.add
+        .text(x, 475, theme.mark, {
           fontFamily: 'monospace',
-          fontSize: '22px',
-          color: Palette.accentText,
+          fontSize: theme.mark === '24h' ? '20px' : '25px',
+          color: `#${theme.color.toString(16).padStart(6, '0')}`,
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
-      const copy = this.add
-        .text(x - 225, y, i18n.t(key), {
+      const title = this.add
+        .text(x, 555, i18n.t(theme.title), {
           fontFamily: 'sans-serif',
-          fontSize: '21px',
+          fontSize: '27px',
           color: Palette.textLight,
-          lineSpacing: 5,
-          wordWrap: { width: 500, useAdvancedWrap: true },
+          fontStyle: 'bold',
+          align: 'center',
         })
-        .setOrigin(0, 0.5);
-      root.add([card, number, copy]);
+        .setOrigin(0.5);
+      const body = this.add
+        .text(x, 615, i18n.t(theme.body), {
+          fontFamily: 'sans-serif',
+          fontSize: '20px',
+          color: '#b8d3db',
+          align: 'center',
+          lineSpacing: 7,
+          wordWrap: { width: 350, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5, 0);
+      root.add([card, markBubble, mark, title, body]);
     });
     this.addModalButton(root, 700, 930, 310, i18n.t('common.backStep'), false, () => {
       this.showConsoleModal();
@@ -1760,11 +2017,6 @@ export class Chapter2LabScene extends Phaser.Scene {
       true,
       () => this.scene.start(SceneKeys.Menu, { screen: 'chapters' }),
     ).setVisible(false);
-  }
-
-  private sensorSupportsDepth(sensor: Sensor, target: DepthZone): boolean {
-    const rank: Record<DepthZone, number> = { surface: 0, mid: 1, bottom: 2 };
-    return rank[target] <= rank[sensor.maxDepthZone];
   }
 
   private drawDeviceGlyph(

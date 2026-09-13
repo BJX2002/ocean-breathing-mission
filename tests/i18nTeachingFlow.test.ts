@@ -44,6 +44,37 @@ describe('teaching-flow copy', () => {
     expect(en['report.doBridgeTitle']).toBe('Dissolved Oxygen (DO)');
   });
 
+  it('keeps the persistent dive hint focused on movement', () => {
+    for (const copy of [en['dive.controlsPersistent'], zhHant['dive.controlsPersistent']]) {
+      expect(copy).not.toMatch(/\bE\b|SPACE/);
+    }
+  });
+
+  it('separates station photography from the follow-up organism record', () => {
+    expect(zhHant['dive.viewfinderMissionStation']).toContain('觀測點');
+    expect(zhHant['dive.viewfinderMissionStation']).not.toContain('生物');
+    expect(zhHant['dive.viewfinderStationSavedNextSubject']).toContain('{species}');
+    expect(en['dive.viewfinderMissionStation']).toContain('observation point');
+    expect(en['dive.viewfinderStationSavedNextSubject']).toContain('{species}');
+  });
+
+  it('gives an explicit retry action after a wrong recap answer', () => {
+    expect(zhHant['report.recapTryAgain']).toContain('再選一次');
+    expect(en['report.recapTryAgain']).toContain('Choose again');
+  });
+
+  it('defines DO before the Chapter 2 first action', () => {
+    expect(zhHant['lab.introBody']).toMatch(/DO.*氧氣/);
+    expect(en['lab.introBody']).toMatch(/DO.*oxygen/i);
+    expect(zhHant['lab.introStart']).toContain('第一步');
+    expect(en['lab.introStart']).toContain('FIRST STEP');
+  });
+
+  it('makes the historical-photo hotspot action explicit', () => {
+    expect(zhHant['opening.photoHotspotHint']).toMatch(/點擊.*黃色光圈/);
+    expect(en['opening.photoHotspotHint']).toMatch(/select.*yellow ring/i);
+  });
+
   it('hides the completed evidence room while the fish-breathing lesson is open', () => {
     const source = readFileSync(`${process.cwd()}/src/scenes/DiveScene.ts`, 'utf8');
     const breathingLesson = section(

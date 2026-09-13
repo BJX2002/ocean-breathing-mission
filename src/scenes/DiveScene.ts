@@ -447,7 +447,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0)
       .setDepth(3000)
       .setInteractive();
-    const panel = createResearchSurface(this, cx, cy, 1510, 850, {
+    const panel = createResearchSurface(this, cx, cy, 1410, 660, {
       depth: 3001,
       fill: Palette.modal,
       border: Palette.accentSoft,
@@ -457,7 +457,7 @@ export class DiveScene extends Phaser.Scene {
       goldRail: true,
     });
     const eyebrow = this.add
-      .text(270, 145, i18n.t('dive.briefingEyebrow'), {
+      .text(320, 250, i18n.t('dive.briefingEyebrow'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#f0c95a',
@@ -465,7 +465,7 @@ export class DiveScene extends Phaser.Scene {
       })
       .setDepth(3003);
     const title = this.add
-      .text(cx, 220, i18n.t('dive.missionBriefTitle'), {
+      .text(cx, 330, i18n.t('dive.missionBriefTitle'), {
         fontFamily: 'sans-serif',
         fontSize: '43px',
         color: Palette.textLight,
@@ -475,56 +475,52 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(3003);
     const body = this.add
-      .text(cx, 286, i18n.t('dive.missionBriefBody'), {
+      .text(cx, 398, i18n.t('dive.missionBriefBody'), {
         fontFamily: 'sans-serif',
         fontSize: '22px',
         color: '#cce7ed',
         align: 'center',
-        wordWrap: { width: 1240, useAdvancedWrap: true },
+        wordWrap: { width: 1120, useAdvancedWrap: true },
       })
       .setOrigin(0.5)
       .setDepth(3003);
-    const cardCopy = [
-      'dive.missionBriefStation',
-      'dive.missionBriefSpecies',
-      'dive.missionBriefDevice',
-      'dive.missionBriefReturn',
-    ] as const;
-    const cardObjects: Phaser.GameObjects.GameObject[] = [];
-    cardCopy.forEach((key, index) => {
-      const x = 500 + (index % 2) * 920;
-      const y = 440 + Math.floor(index / 2) * 205;
-      const card = createResearchSurface(this, x, y, 790, 150, {
-        depth: 3002,
-        fill: Palette.cardSoft,
-        border: index === 3 ? Palette.gold : Palette.accentSoft,
-        borderAlpha: 0.48,
-        radius: 20,
-        shadow: false,
-      });
-      const number = this.add
-        .text(x - 330, y, String(index + 1).padStart(2, '0'), {
-          fontFamily: 'monospace',
-          fontSize: '24px',
-          color: index === 3 ? '#f0c95a' : Palette.accentText,
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5)
-        .setDepth(3003);
-      const copy = this.add
-        .text(x - 275, y, i18n.t(key), {
-          fontFamily: 'sans-serif',
-          fontSize: '21px',
-          color: Palette.textLight,
-          lineSpacing: 7,
-          wordWrap: { width: 640, useAdvancedWrap: true },
-        })
-        .setOrigin(0, 0.5)
-        .setDepth(3003);
-      cardObjects.push(card, number, copy);
+    const firstStepCard = createResearchSurface(this, cx, 555, 1120, 185, {
+      depth: 3002,
+      fill: Palette.cardSoft,
+      border: Palette.gold,
+      borderAlpha: 0.58,
+      radius: 22,
+      shadow: false,
     });
-    const hint = this.add
-      .text(cx, 785, i18n.t('dive.missionBriefHint'), {
+    const firstStepNumber = this.add
+      .text(cx - 475, 555, '01', {
+        fontFamily: 'monospace',
+        fontSize: '32px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(3003);
+    const firstStepTitle = this.add
+      .text(cx - 410, 515, i18n.t('dive.missionBriefFirstStep'), {
+        fontFamily: 'sans-serif',
+        fontSize: '27px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(3003);
+    const firstStepAction = this.add
+      .text(cx - 410, 574, i18n.t('dive.demoFirstStep'), {
+        fontFamily: 'sans-serif',
+        fontSize: '22px',
+        color: '#cce7ed',
+        wordWrap: { width: 810, useAdvancedWrap: true },
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(3003);
+    const progress = this.add
+      .text(cx, 682, i18n.t('dive.missionBriefProgress'), {
         fontFamily: 'sans-serif',
         fontSize: '20px',
         color: Palette.accentText,
@@ -533,7 +529,7 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3003);
-    const start = new ResearchButton(this, cx, 900, 430, 72, i18n.t('dive.startSurvey'), {
+    const start = new ResearchButton(this, cx, 780, 430, 72, i18n.t('dive.startSurvey'), {
       tone: 'primary',
       fontSize: 25,
       depth: 3004,
@@ -548,7 +544,19 @@ export class DiveScene extends Phaser.Scene {
         saveService.save(gameState.toSave());
       }
     });
-    this.overlayObjects = [dim, panel, eyebrow, title, body, ...cardObjects, hint, start.root];
+    this.overlayObjects = [
+      dim,
+      panel,
+      eyebrow,
+      title,
+      body,
+      firstStepCard,
+      firstStepNumber,
+      firstStepTitle,
+      firstStepAction,
+      progress,
+      start.root,
+    ];
   }
 
   /**
@@ -719,47 +727,72 @@ export class DiveScene extends Phaser.Scene {
         add(
           this.add
             .text(oldX, cardY - 122, i18n.t('dive.storyThen'), {
-              fontFamily: 'sans-serif', fontSize: '23px', color: '#ffe58a', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '23px',
+              color: '#ffe58a',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(oldX, cardY + 122, i18n.t('dive.storyThenBody'), {
-              fontFamily: 'sans-serif', fontSize: '20px', color: Palette.textLight,
-              align: 'center', wordWrap: { width: 430, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '20px',
+              color: Palette.textLight,
+              align: 'center',
+              wordWrap: { width: 430, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY - 122, i18n.t('dive.storyToday'), {
-              fontFamily: 'sans-serif', fontSize: '23px', color: '#9cf7ef', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '23px',
+              color: '#9cf7ef',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY - 15, '?', {
-              fontFamily: 'sans-serif', fontSize: '108px', color: '#9cf7ef', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '108px',
+              color: '#9cf7ef',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY + 116, i18n.t('dive.storyTodayBody'), {
-              fontFamily: 'sans-serif', fontSize: '20px', color: Palette.textLight,
-              align: 'center', wordWrap: { width: 430, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '20px',
+              color: Palette.textLight,
+              align: 'center',
+              wordWrap: { width: 430, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(cx, top + 600, i18n.t('dive.briefingQuestion'), {
-              fontFamily: 'sans-serif', fontSize: '22px', color: Palette.accentText,
-              fontStyle: 'bold', align: 'center', wordWrap: { width: 1120, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '22px',
+              color: Palette.accentText,
+              fontStyle: 'bold',
+              align: 'center',
+              wordWrap: { width: 1120, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
       } else if (page === 1) {
         add(
@@ -1313,25 +1346,35 @@ export class DiveScene extends Phaser.Scene {
       if (page === 0) {
         add(
           this.add
-            .text(GAME_WIDTH / 2, 640, `${i18n.t('common.stepLabel')} ${i18n.t('report.todayGalleryStep')}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '25px',
-              color: '#e6fbff',
-              fontStyle: 'bold',
-              align: 'center',
-            })
+            .text(
+              GAME_WIDTH / 2,
+              640,
+              `${i18n.t('common.stepLabel')} ${i18n.t('report.todayGalleryStep')}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '25px',
+                color: '#e6fbff',
+                fontStyle: 'bold',
+                align: 'center',
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4104),
         );
         add(
           this.add
-            .text(GAME_WIDTH / 2, 700, `${i18n.t('common.tipLabel')} ${i18n.t('report.todayGalleryTip')}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '22px',
-              color: Palette.textMuted,
-              align: 'center',
-              wordWrap: { width: 1160, useAdvancedWrap: true },
-            })
+            .text(
+              GAME_WIDTH / 2,
+              700,
+              `${i18n.t('common.tipLabel')} ${i18n.t('report.todayGalleryTip')}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '22px',
+                color: Palette.textMuted,
+                align: 'center',
+                wordWrap: { width: 1160, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4104),
         );
@@ -1353,14 +1396,19 @@ export class DiveScene extends Phaser.Scene {
         const current = questions[page - 1] ?? questions[0];
         add(
           this.add
-            .text(GAME_WIDTH / 2, 640, `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '27px',
-              color: '#e9fbff',
-              fontStyle: 'bold',
-              align: 'center',
-              wordWrap: { width: 1240, useAdvancedWrap: true },
-            })
+            .text(
+              GAME_WIDTH / 2,
+              640,
+              `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '27px',
+                color: '#e9fbff',
+                fontStyle: 'bold',
+                align: 'center',
+                wordWrap: { width: 1240, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4104),
         );
@@ -1654,13 +1702,18 @@ export class DiveScene extends Phaser.Scene {
         drawFishGroup(x + 104, 444, station.newCount, 0x67d8d1);
         add(
           this.add
-            .text(x, 535, i18n.t(index === 2 ? 'report.compareSeabedNote' : 'report.compareFishNote'), {
-              fontFamily: 'sans-serif',
-              fontSize: '18px',
-              color: Palette.textMuted,
-              align: 'center',
-              wordWrap: { width: 330, useAdvancedWrap: true },
-            })
+            .text(
+              x,
+              535,
+              i18n.t(index === 2 ? 'report.compareSeabedNote' : 'report.compareFishNote'),
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '18px',
+                color: Palette.textMuted,
+                align: 'center',
+                wordWrap: { width: 330, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4102),
         );
@@ -1839,19 +1892,12 @@ export class DiveScene extends Phaser.Scene {
     );
     let step = 0;
     const foodChainProgress = (done: number): string =>
-      i18n
-        .t('report.foodLessonProgress')
-        .replace('{done}', String(done))
-        .replace('{total}', '3');
-    const button = new ResearchButton(
-      this,
-      GAME_WIDTH / 2,
-      875,
-      430,
-      70,
-      foodChainProgress(0),
-      { tone: 'locked', fontSize: 26, depth: 4103 },
-    );
+      i18n.t('report.foodLessonProgress').replace('{done}', String(done)).replace('{total}', '3');
+    const button = new ResearchButton(this, GAME_WIDTH / 2, 875, 430, 70, foodChainProgress(0), {
+      tone: 'locked',
+      fontSize: 26,
+      depth: 4103,
+    });
     add(button.root);
     button.onPress(() => {
       if (step < 3) {
@@ -2000,9 +2046,11 @@ export class DiveScene extends Phaser.Scene {
       },
     ] as const;
     let index = 0;
+    let transitioning = false;
     let pageObjects: Phaser.GameObjects.GameObject[] = [];
 
     const render = (): void => {
+      transitioning = false;
       for (const object of pageObjects) object.destroy();
       pageObjects = [];
       const add = <T extends Phaser.GameObjects.GameObject>(object: T): T => {
@@ -2036,14 +2084,19 @@ export class DiveScene extends Phaser.Scene {
       );
       add(
         this.add
-          .text(GAME_WIDTH / 2, 350, `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`, {
-            fontFamily: 'sans-serif',
-            fontSize: '32px',
-            color: '#dff9fb',
-            align: 'center',
-            wordWrap: { width: 980, useAdvancedWrap: true },
-            lineSpacing: 8,
-          })
+          .text(
+            GAME_WIDTH / 2,
+            350,
+            `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`,
+            {
+              fontFamily: 'sans-serif',
+              fontSize: '32px',
+              color: '#dff9fb',
+              align: 'center',
+              wordWrap: { width: 980, useAdvancedWrap: true },
+              lineSpacing: 8,
+            },
+          )
           .setOrigin(0.5)
           .setDepth(3002),
       );
@@ -2061,35 +2114,63 @@ export class DiveScene extends Phaser.Scene {
         this.add
           .text(GAME_WIDTH / 2, 720, '', {
             fontFamily: 'sans-serif',
-            fontSize: '23px',
+            fontSize: '26px',
             color: '#91e6a7',
             align: 'center',
             wordWrap: { width: 900, useAdvancedWrap: true },
+            padding: { x: 18, y: 12 },
           })
           .setOrigin(0.5)
           .setDepth(3002),
       );
+      const choiceButtons: Phaser.GameObjects.Text[] = [];
       current.choices.forEach((choice, choiceIndex) => {
         const button = add(
           this.add
-            .text(GAME_WIDTH / 2, 510 + choiceIndex * 104, `${choiceIndex === 0 ? 'A' : 'B'}. ${i18n.t(choice)}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '25px',
-              color: Palette.textLight,
-              backgroundColor: '#123c50',
-              padding: { x: 32, y: 17 },
-              align: 'center',
-              wordWrap: { width: 840, useAdvancedWrap: true },
-            })
+            .text(
+              GAME_WIDTH / 2,
+              510 + choiceIndex * 104,
+              `${choiceIndex === 0 ? 'A' : 'B'}. ${i18n.t(choice)}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '25px',
+                color: Palette.textLight,
+                backgroundColor: '#123c50',
+                padding: { x: 32, y: 17 },
+                align: 'center',
+                wordWrap: { width: 840, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(3002)
             .setInteractive({ useHandCursor: true }),
         );
+        choiceButtons.push(button);
         button.on(Phaser.Input.Events.POINTER_UP, () => {
+          if (transitioning) return;
           const correct = choiceIndex === current.correct;
           button.setBackgroundColor(correct ? '#1c7a74' : '#73423e');
-          feedback.setText(i18n.t(correct ? 'report.recapCorrect' : 'report.recapTryAgain'));
-          if (!correct) return;
+          feedback
+            .setColor(correct ? '#d8fffb' : '#fff3b0')
+            .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
+            .setText(i18n.t(correct ? 'report.recapCorrect' : 'report.recapTryAgain'));
+          if (!correct) {
+            this.tweens.add({
+              targets: button,
+              x: { from: GAME_WIDTH / 2 - 10, to: GAME_WIDTH / 2 + 10 },
+              duration: 70,
+              yoyo: true,
+              repeat: 2,
+              onComplete: () => {
+                if (button.active && !transitioning) {
+                  button.setX(GAME_WIDTH / 2).setBackgroundColor('#123c50');
+                }
+              },
+            });
+            return;
+          }
+          transitioning = true;
+          for (const choiceButton of choiceButtons) choiceButton.disableInteractive();
           this.time.delayedCall(650, () => {
             if (index >= questions.length - 1) this.enterChapter2();
             else {
@@ -2113,6 +2194,7 @@ export class DiveScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true }),
       );
       back.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (transitioning) return;
         if (index === 0) this.showDoBridge();
         else {
           index -= 1;
@@ -2256,16 +2338,14 @@ export class DiveScene extends Phaser.Scene {
         .setStrokeStyle(2, 0x9cf7ef, 0.9);
       const label = this.add
         .text(0, 0, 'O₂', {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: '#d8fffb',
-            fontStyle: 'bold',
-          })
+          fontFamily: 'monospace',
+          fontSize: '12px',
+          color: '#d8fffb',
+          fontStyle: 'bold',
+        })
         .setOrigin(0.5);
       const bubbleRoot = add(
-        this.add
-          .container(x, 465 + (index % 2) * 34, [bubble, label])
-          .setDepth(3003),
+        this.add.container(x, 465 + (index % 2) * 34, [bubble, label]).setDepth(3003),
       );
       this.tweens.add({
         targets: bubbleRoot,
@@ -2289,13 +2369,18 @@ export class DiveScene extends Phaser.Scene {
     );
     add(
       this.add
-        .text(GAME_WIDTH / 2, 615, `${i18n.t('common.questionLabel')} ${i18n.t('report.doQuestionPrompt')}`, {
-          fontFamily: 'sans-serif',
-          fontSize: '24px',
-          color: '#e9fbff',
-          fontStyle: 'bold',
-          align: 'center',
-        })
+        .text(
+          GAME_WIDTH / 2,
+          615,
+          `${i18n.t('common.questionLabel')} ${i18n.t('report.doQuestionPrompt')}`,
+          {
+            fontFamily: 'sans-serif',
+            fontSize: '24px',
+            color: '#e9fbff',
+            fontStyle: 'bold',
+            align: 'center',
+          },
+        )
         .setOrigin(0.5)
         .setDepth(3004),
     );
@@ -2330,7 +2415,9 @@ export class DiveScene extends Phaser.Scene {
         } else {
           scaleMarker.setStrokeStyle(4, Palette.danger, 1);
         }
-        feedback.setText(i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'));
+        feedback.setText(
+          i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
+        );
         if (choice.correct) this.time.delayedCall(620, () => this.showDoBridge());
       });
     });
@@ -3158,28 +3245,23 @@ export class DiveScene extends Phaser.Scene {
     crosshairLines.lineBetween(targetX, targetY + 40, targetX, targetY + 112);
     const targetSpeciesId = this.getViewfinderTargetSpeciesId(target.id);
     const missionBanner = this.add
-      .text(
-        previewX,
-        previewTop + 22,
-        i18n
-          .t('dive.viewfinderMission')
-          .replace('{species}', this.getSpeciesLabel(targetSpeciesId)),
-        {
-          fontFamily: 'sans-serif',
-          fontSize: '18px',
-          color: '#fff3b0',
-          backgroundColor: '#4a391bdd',
-          padding: { x: 14, y: 7 },
-          fontStyle: 'bold',
-        },
-      )
+      .text(previewX, previewTop + 22, i18n.t('dive.viewfinderMissionStation'), {
+        fontFamily: 'sans-serif',
+        fontSize: '18px',
+        color: '#fff3b0',
+        backgroundColor: '#4a391bdd',
+        padding: { x: 14, y: 7 },
+        fontStyle: 'bold',
+      })
       .setOrigin(0.5, 0)
       .setDepth(2808);
     const targetLabel = this.add
       .text(
         targetX,
         targetY + this.viewfinderTargetLabelOffsetY,
-        `${i18n.t('dive.viewfinderTarget')}\n${this.getSpeciesLabel(targetSpeciesId)}`,
+        i18n
+          .t('dive.viewfinderReferenceSubject')
+          .replace('{species}', this.getSpeciesLabel(targetSpeciesId)),
         {
           fontFamily: 'sans-serif',
           fontSize: '17px',
@@ -3285,8 +3367,11 @@ export class DiveScene extends Phaser.Scene {
     this.closeViewfinder();
     this.cameras.main.flash(140, 255, 255, 255);
     this.playShutterSound();
+    const nextSubject = this.getSpeciesLabel(this.getViewfinderTargetSpeciesId(stationId));
     this.showStatus(
-      `${i18n.t(quality.captureKey)} ${this.mapView.stationPhotoCount}/${REQUIRED_STATION_PHOTOS}`,
+      `${i18n.t(quality.captureKey)} ${this.mapView.stationPhotoCount}/${REQUIRED_STATION_PHOTOS}\n${i18n
+        .t('dive.viewfinderStationSavedNextSubject')
+        .replace('{species}', nextSubject)}`,
     );
   }
 
@@ -3341,13 +3426,20 @@ export class DiveScene extends Phaser.Scene {
     if (this.viewfinderTarget === null) return 999;
     const focusX = this.viewfinderAimOrigin.x + this.viewfinderAimX;
     const focusY = this.viewfinderAimOrigin.y + this.viewfinderAimY;
-    const targetFish = this.viewfinderFocusPhotos.find((fish) => fish.isTarget);
-    if (targetFish === undefined) return this.viewfinderTarget.distance + 240;
-    const centerDistance = Phaser.Math.Distance.Between(focusX, focusY, targetFish.x, targetFish.y);
-    const fishRadius = Math.max(targetFish.image.displayWidth, targetFish.image.displayHeight) / 2;
-    // A target is only well framed when the crosshair is actually centered
-    // on it; touching the edge of the reticle is no longer enough.
-    const subjectError = Math.max(0, centerDistance - fishRadius * 0.35);
+    const referenceSubject = this.viewfinderFocusPhotos.find((photo) => photo.isTarget);
+    if (referenceSubject === undefined) return this.viewfinderTarget.distance + 240;
+    const centerDistance = Phaser.Math.Distance.Between(
+      focusX,
+      focusY,
+      referenceSubject.x,
+      referenceSubject.y,
+    );
+    const referenceRadius =
+      Math.max(referenceSubject.image.displayWidth, referenceSubject.image.displayHeight) / 2;
+    // This subject is a framing reference within the fixed-station comparison
+    // photo. Recording the organism remains a separate action outside the
+    // viewfinder.
+    const subjectError = Math.max(0, centerDistance - referenceRadius * 0.35);
     return this.viewfinderTarget.distance + subjectError * 1.8;
   }
 

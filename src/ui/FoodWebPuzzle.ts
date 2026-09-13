@@ -50,10 +50,48 @@ interface DraggableCard {
   readonly spec: FoodWebCardSpec;
   readonly root: Phaser.GameObjects.Container;
   readonly background: Phaser.GameObjects.Graphics;
+  readonly nameBubble: Phaser.GameObjects.Graphics;
   readonly homeX: number;
   readonly homeY: number;
   placed: boolean;
 }
+
+interface FoodWebRoleStyle {
+  readonly cardFill: number;
+  readonly zoneFill: number;
+  readonly border: number;
+  readonly bubbleFill: number;
+  readonly titleColor: string;
+}
+
+/**
+ * Stable role colours help younger players match a draggable chip with its
+ * destination before they have finished reading every label. Each colour is
+ * paired with a dark surface so meaning never depends on colour alone.
+ */
+const FOOD_WEB_ROLE_STYLES: Readonly<Record<FoodWebZoneId, FoodWebRoleStyle>> = {
+  'small-fish': {
+    cardFill: 0x102f45,
+    zoneFill: 0x102f45,
+    border: 0x62cdf5,
+    bubbleFill: 0x1d6686,
+    titleColor: '#dff7ff',
+  },
+  predator: {
+    cardFill: 0x3a2b19,
+    zoneFill: 0x332719,
+    border: 0xf3bd4e,
+    bubbleFill: 0x755018,
+    titleColor: '#fff4d6',
+  },
+  seabed: {
+    cardFill: 0x173c32,
+    zoneFill: 0x173c32,
+    border: 0x71d7a5,
+    bubbleFill: 0x28684f,
+    titleColor: '#e6fff1',
+  },
+};
 
 /**
  * A compact, tactile food-web builder used in the Chapter 1 evidence room.
@@ -90,27 +128,34 @@ export class FoodWebPuzzle {
     this.objects.push(panel);
 
     this.objects.push(
-      scene.add.text(left + 28, top + 20, copy.title, {
-        fontFamily: 'sans-serif',
-        fontSize: '27px',
-        color: '#9cf7ef',
-        fontStyle: 'bold',
-      }).setDepth(depth + 2),
-      scene.add.text(left + 28, top + 51, copy.hint, {
-        fontFamily: 'sans-serif',
-        fontSize: '19px',
-        color: '#9bb9c9',
-        wordWrap: { width: width - 320, useAdvancedWrap: true },
-      }).setDepth(depth + 2),
+      scene.add
+        .text(left + 28, top + 20, copy.title, {
+          fontFamily: 'sans-serif',
+          fontSize: '27px',
+          color: '#9cf7ef',
+          fontStyle: 'bold',
+        })
+        .setDepth(depth + 2),
+      scene.add
+        .text(left + 28, top + 51, copy.hint, {
+          fontFamily: 'sans-serif',
+          fontSize: '19px',
+          color: '#9bb9c9',
+          wordWrap: { width: width - 320, useAdvancedWrap: true },
+        })
+        .setDepth(depth + 2),
     );
 
-    this.progressText = scene.add.text(left + width - 28, top + 22, '', {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#f0c95a',
-      fontStyle: 'bold',
-      align: 'right',
-    }).setOrigin(1, 0).setDepth(depth + 2);
+    this.progressText = scene.add
+      .text(left + width - 28, top + 22, '', {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+        align: 'right',
+      })
+      .setOrigin(1, 0)
+      .setDepth(depth + 2);
     this.objects.push(this.progressText);
 
     const zoneTop = top + 96;
@@ -165,12 +210,14 @@ export class FoodWebPuzzle {
     tray.strokeRoundedRect(left + 20, trayY - 49, width - 40, 98, 12);
     this.objects.push(tray);
     this.objects.push(
-      scene.add.text(left + 38, trayY - 40, copy.tray, {
-        fontFamily: 'monospace',
-        fontSize: '18px',
-        color: '#7fa8bd',
-        fontStyle: 'bold',
-      }).setDepth(depth + 3),
+      scene.add
+        .text(left + 38, trayY - 40, copy.tray, {
+          fontFamily: 'monospace',
+          fontSize: '18px',
+          color: '#7fa8bd',
+          fontStyle: 'bold',
+        })
+        .setDepth(depth + 3),
     );
 
     const cardGap = 10;
@@ -178,15 +225,24 @@ export class FoodWebPuzzle {
     const rowWidth = options.cards.length * cardWidth + (options.cards.length - 1) * cardGap;
     const firstCardX = x - rowWidth / 2 + cardWidth / 2;
     options.cards.forEach((spec, index) => {
-      this.createCard(spec, firstCardX + index * (cardWidth + cardGap), trayY + 11, depth + 5, zones);
+      this.createCard(
+        spec,
+        firstCardX + index * (cardWidth + cardGap),
+        trayY + 11,
+        depth + 5,
+        zones,
+      );
     });
 
-    this.feedbackText = scene.add.text(x, zoneTop + zoneHeight + 18, '', {
-      fontFamily: 'sans-serif',
-      fontSize: '20px',
-      color: '#f2a679',
-      align: 'center',
-    }).setOrigin(0.5, 0).setDepth(depth + 4);
+    this.feedbackText = scene.add
+      .text(x, zoneTop + zoneHeight + 18, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#f2a679',
+        align: 'center',
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(depth + 4);
     this.objects.push(this.feedbackText);
     this.updateProgress();
   }
@@ -244,9 +300,9 @@ export class FoodWebPuzzle {
     y2: number,
     color: number,
   ): void {
-    graphics.lineStyle(4, color, 0.72);
+    graphics.lineStyle(3, color, 0.6);
     graphics.lineBetween(x1, y1, x2 - 12, y2);
-    graphics.fillStyle(color, 0.88);
+    graphics.fillStyle(color, 0.78);
     graphics.fillTriangle(x2, y2, x2 - 15, y2 - 9, x2 - 15, y2 + 9);
   }
 
@@ -266,14 +322,16 @@ export class FoodWebPuzzle {
       art.lineTo(offset + 7, -46 - Math.abs(offset % 17));
       art.strokePath();
     }
-    const label = this.scene.add.text(0, 68, title, {
-      fontFamily: 'sans-serif',
-      fontSize: '19px',
-      color: '#d8fffb',
-      fontStyle: 'bold',
-      align: 'center',
-      wordWrap: { width: 142, useAdvancedWrap: true },
-    }).setOrigin(0.5);
+    const label = this.scene.add
+      .text(0, 68, title, {
+        fontFamily: 'sans-serif',
+        fontSize: '19px',
+        color: '#d8fffb',
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 142, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
     root.add([glow, art, label]);
     this.scene.tweens.add({
       targets: glow,
@@ -288,22 +346,38 @@ export class FoodWebPuzzle {
   }
 
   private createZone(zone: ZoneLayout, title: string, depth: number): void {
+    const style = FOOD_WEB_ROLE_STYLES[zone.id];
     const g = this.scene.add.graphics().setDepth(depth);
-    g.fillStyle(zone.id === 'predator' ? 0x2b2836 : zone.id === 'seabed' ? 0x243d38 : 0x12384a, 0.92);
-    g.fillRoundedRect(zone.x - zone.width / 2, zone.y - zone.height / 2, zone.width, zone.height, 16);
-    g.lineStyle(2, zone.id === 'predator' ? 0xf0c95a : 0x6eddd3, 0.52);
-    g.strokeRoundedRect(zone.x - zone.width / 2, zone.y - zone.height / 2, zone.width, zone.height, 16);
+    g.fillStyle(style.zoneFill, 0.92);
+    g.fillRoundedRect(
+      zone.x - zone.width / 2,
+      zone.y - zone.height / 2,
+      zone.width,
+      zone.height,
+      16,
+    );
+    g.lineStyle(2, style.border, 0.72);
+    g.strokeRoundedRect(
+      zone.x - zone.width / 2,
+      zone.y - zone.height / 2,
+      zone.width,
+      zone.height,
+      16,
+    );
     for (const slot of zone.slots) {
-      g.lineStyle(2, 0xa7dcd4, 0.22);
+      g.lineStyle(2, style.border, 0.28);
       g.strokeRoundedRect(slot.x - 102, slot.y - 25, 204, 50, 9);
     }
-    const label = this.scene.add.text(zone.x, zone.y - zone.height / 2 + 17, title, {
-      fontFamily: 'sans-serif',
-      fontSize: '20px',
-      color: zone.id === 'predator' ? '#f0c95a' : '#9cf7ef',
-      fontStyle: 'bold',
-      align: 'center',
-    }).setOrigin(0.5, 0).setDepth(depth + 1);
+    const label = this.scene.add
+      .text(zone.x, zone.y - zone.height / 2 + 17, title, {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: style.titleColor,
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(depth + 1);
     this.objects.push(g, label);
   }
 
@@ -316,41 +390,49 @@ export class FoodWebPuzzle {
   ): void {
     const root = this.scene.add.container(homeX, homeY).setDepth(depth).setSize(190, 62);
     const background = this.scene.add.graphics();
-    this.paintCard(background, false);
-    const icon = this.createCardIcon(spec.textureKey);
-    const label = this.scene.add.text(21, -9, spec.label, {
-      fontFamily: 'sans-serif',
-      fontSize: '16px',
-      color: '#e6f7ff',
-      fontStyle: 'bold',
-      align: 'center',
-      wordWrap: { width: 116, useAdvancedWrap: true },
-    }).setOrigin(0.5);
-    const status = this.scene.add.text(21, 14, spec.status, {
-      fontFamily: 'sans-serif',
-      fontSize: '13px',
-      color: spec.statusColor,
-      align: 'center',
-      wordWrap: { width: 116, useAdvancedWrap: true },
-    }).setOrigin(0.5);
-    root.add([background, icon, label, status]);
+    const nameBubble = this.scene.add.graphics();
+    this.paintCard(background, nameBubble, spec.zone, false);
+    const icon = this.createCardIcon(spec.textureKey, spec.zone);
+    const label = this.scene.add
+      .text(21, -9, spec.label, {
+        fontFamily: 'sans-serif',
+        fontSize: '16px',
+        color: '#ffffff',
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 116, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    const status = this.scene.add
+      .text(21, 14, spec.status, {
+        fontFamily: 'sans-serif',
+        fontSize: '13px',
+        color: spec.statusColor,
+        align: 'center',
+        wordWrap: { width: 116, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    root.add([background, nameBubble, icon, label, status]);
     root.setInteractive({ useHandCursor: true });
     this.scene.input.setDraggable(root);
 
-    const card: DraggableCard = { spec, root, background, homeX, homeY, placed: false };
+    const card: DraggableCard = { spec, root, background, nameBubble, homeX, homeY, placed: false };
     this.cards.push(card);
     this.objects.push(root);
 
     root.on(Phaser.Input.Events.GAMEOBJECT_DRAG_START, () => {
       if (card.placed) return;
       root.setDepth(depth + 20).setScale(1.04);
-      this.paintCard(background, true);
+      this.paintCard(background, nameBubble, spec.zone, true);
       this.feedbackText.setText('');
     });
-    root.on(Phaser.Input.Events.GAMEOBJECT_DRAG, (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-      if (card.placed) return;
-      root.setPosition(dragX, dragY);
-    });
+    root.on(
+      Phaser.Input.Events.GAMEOBJECT_DRAG,
+      (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+        if (card.placed) return;
+        root.setPosition(dragX, dragY);
+      },
+    );
     root.on(Phaser.Input.Events.GAMEOBJECT_DRAG_END, () => {
       if (card.placed) return;
       const zone = zones.find((candidate) => this.contains(candidate, root.x, root.y));
@@ -362,30 +444,53 @@ export class FoodWebPuzzle {
     });
   }
 
-  private createCardIcon(textureKey: string | null): Phaser.GameObjects.GameObject {
+  private createCardIcon(
+    textureKey: string | null,
+    role: FoodWebZoneId,
+  ): Phaser.GameObjects.GameObject {
     if (textureKey !== null && this.scene.textures.exists(textureKey)) {
       const source = this.scene.textures.get(textureKey).getSourceImage();
       const scale = Math.min(58 / source.width, 42 / source.height);
-      return this.scene.add.image(-55, 0, textureKey).setDisplaySize(source.width * scale, source.height * scale);
+      return this.scene.add
+        .image(-55, 0, textureKey)
+        .setDisplaySize(source.width * scale, source.height * scale);
     }
     const fallback = this.scene.add.graphics();
-    fallback.fillStyle(0x3fd0c9, 0.85);
+    fallback.fillStyle(FOOD_WEB_ROLE_STYLES[role].border, 0.9);
     fallback.fillEllipse(-55, 0, 44, 22);
     fallback.fillTriangle(-76, 0, -88, -10, -88, 10);
     return fallback;
   }
 
-  private paintCard(background: Phaser.GameObjects.Graphics, active: boolean): void {
+  private paintCard(
+    background: Phaser.GameObjects.Graphics,
+    nameBubble: Phaser.GameObjects.Graphics,
+    role: FoodWebZoneId,
+    active: boolean,
+  ): void {
+    const style = FOOD_WEB_ROLE_STYLES[role];
     background.clear();
-    background.fillStyle(active ? 0x1b5963 : 0x0f4351, 0.98);
-    background.fillRoundedRect(-95, -31, 190, 62, 10);
-    background.lineStyle(active ? 3 : 2, active ? 0xf0c95a : 0x77ddd4, active ? 0.95 : 0.58);
-    background.strokeRoundedRect(-95, -31, 190, 62, 10);
+    background.fillStyle(style.cardFill, 0.98);
+    background.fillRoundedRect(-95, -31, 190, 62, 18);
+    background.lineStyle(active ? 4 : 2, style.border, active ? 1 : 0.82);
+    background.strokeRoundedRect(-95, -31, 190, 62, 18);
+
+    nameBubble.clear();
+    nameBubble.fillStyle(style.bubbleFill, 1);
+    nameBubble.fillRoundedRect(-41, -28, 124, 36, 18);
+    if (active) {
+      nameBubble.lineStyle(2, 0xffffff, 0.72);
+      nameBubble.strokeRoundedRect(-41, -28, 124, 36, 18);
+    }
   }
 
   private contains(zone: ZoneLayout, x: number, y: number): boolean {
-    return x >= zone.x - zone.width / 2 && x <= zone.x + zone.width / 2
-      && y >= zone.y - zone.height / 2 && y <= zone.y + zone.height / 2;
+    return (
+      x >= zone.x - zone.width / 2 &&
+      x <= zone.x + zone.width / 2 &&
+      y >= zone.y - zone.height / 2 &&
+      y <= zone.y + zone.height / 2
+    );
   }
 
   private placeCard(card: DraggableCard, zone: ZoneLayout, depth: number): void {
@@ -394,8 +499,11 @@ export class FoodWebPuzzle {
     this.occupiedSlots.set(zone.id, occupied + 1);
     card.placed = true;
     this.scene.input.setDraggable(card.root, false);
-    card.root.disableInteractive().setDepth(depth + 6).setScale(0.93);
-    this.paintCard(card.background, false);
+    card.root
+      .disableInteractive()
+      .setDepth(depth + 6)
+      .setScale(0.93);
+    this.paintCard(card.background, card.nameBubble, card.spec.zone, false);
     this.scene.tweens.add({
       targets: card.root,
       x: slot.x,
@@ -410,7 +518,7 @@ export class FoodWebPuzzle {
 
   private rejectCard(card: DraggableCard, depth: number): void {
     card.root.setDepth(depth + 5).setScale(1);
-    this.paintCard(card.background, false);
+    this.paintCard(card.background, card.nameBubble, card.spec.zone, false);
     this.feedbackText.setColor('#f2a679').setText(this.options.copy.wrongZone);
     this.scene.tweens.add({
       targets: card.root,
@@ -425,9 +533,11 @@ export class FoodWebPuzzle {
     const complete = this.placedCount === this.cards.length;
     this.progressText
       .setColor(complete ? '#91e6a7' : '#f0c95a')
-      .setText(complete
-        ? `✓ ${this.options.copy.complete}`
-        : `${this.options.copy.progress} ${this.placedCount}/${this.cards.length}`);
+      .setText(
+        complete
+          ? `✓ ${this.options.copy.complete}`
+          : `${this.options.copy.progress} ${this.placedCount}/${this.cards.length}`,
+      );
     if (complete) {
       this.feedbackText.setColor('#91e6a7').setText(this.options.copy.complete);
       if (!this.completeNotified) {
