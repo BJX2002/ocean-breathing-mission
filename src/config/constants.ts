@@ -12,6 +12,15 @@ export const SEABED_TOP = GAME_HEIGHT - SEABED_HEIGHT;
 /** Presentation-only habitat shelf; it does not change diver movement bounds. */
 export const HABITAT_FLOOR_Y = GAME_HEIGHT - 170;
 
+/**
+ * Shared top edge of the illustrated sand shelf. Keeping this in one place
+ * lets scenery, bottom-dwelling organisms, labels and interaction distances
+ * agree on where the seabed actually is.
+ */
+export function getHabitatFloorY(x: number): number {
+  return HABITAT_FLOOR_Y - 12 + Math.sin(x * 0.018) * 6;
+}
+
 /** localStorage key for the save file (versioned to allow migrations). */
 export const STORAGE_KEY = 'ocean-breathing-mission/save/v1';
 

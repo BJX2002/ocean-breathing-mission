@@ -18,12 +18,14 @@ interface MenuSceneData {
  */
 export class MenuScene extends Phaser.Scene {
   private screen: MenuScreen = 'title';
+  private chapterTransitionStarted = false;
 
   constructor() {
     super(SceneKeys.Menu);
   }
 
   init(data?: MenuSceneData): void {
+    this.chapterTransitionStarted = false;
     if (data?.screen !== undefined) {
       this.screen = data.screen;
       return;
@@ -35,8 +37,63 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Scene instances are reused by Phaser. Explicitly restore input here so a
+    // previous guarded chapter transition cannot leave the chapter cards inert.
+    this.input.enabled = true;
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Menu });
     gameState.debugMode = isDebugEnabled();
+    const requestedScreen = new URLSearchParams(window.location.search).get('screen');
+    if (gameState.debugMode && requestedScreen === 'op1') {
+      gameState.selectedChapter = 1;
+      this.scene.start(SceneKeys.Opening, { startWithNarration: true });
+      return;
+    }
+    const chapter1DebugScreens = new Set([
+      'report',
+      'food-chain',
+      'food-lesson',
+      'fish-oxygen',
+      'do',
+      'viewfinder1',
+      'viewfinder2',
+      'viewfinder3',
+      'subject-viewfinder1',
+      'subject-viewfinder2',
+      'subject-viewfinder3',
+    ]);
+    if (
+      gameState.debugMode &&
+      requestedScreen !== null &&
+      chapter1DebugScreens.has(requestedScreen)
+    ) {
+      gameState.selectedChapter = 1;
+      this.scene.start(SceneKeys.Opening);
+      return;
+    }
+    const chapter2DebugScreens = new Set([
+      'evidence',
+      'experiment',
+      'unlock',
+      'comparison',
+      'deployment',
+      'deployment-result',
+      'deployment-result-vessel',
+      'deployment-result-fixed',
+      'deployment-result-success',
+      'summary',
+      'quiz',
+      'quiz-sensor',
+      'ending',
+    ]);
+    if (
+      gameState.debugMode &&
+      requestedScreen !== null &&
+      chapter2DebugScreens.has(requestedScreen)
+    ) {
+      gameState.selectedChapter = 2;
+      this.scene.start(SceneKeys.Chapter2Lab);
+      return;
+    }
 
     this.createCoverBackground();
     if (this.screen === 'language') this.createLanguageSetup();
@@ -83,9 +140,9 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(10);
 
     const title = this.add
-      .text(cx, 348, i18n.t('menu.title'), {
+      .text(cx, 332, i18n.t('menu.title'), {
         fontFamily: 'sans-serif',
-        fontSize: '70px',
+        fontSize: '82px',
         color: '#f4fbff',
         fontStyle: 'bold',
         align: 'center',
@@ -99,7 +156,7 @@ export class MenuScene extends Phaser.Scene {
     this.add
       .text(cx, kickerY, i18n.t('menu.kicker'), {
         fontFamily: 'sans-serif',
-        fontSize: '27px',
+        fontSize: '31px',
         color: '#bfe6ed',
         letterSpacing: 1,
         align: 'center',
@@ -107,9 +164,9 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5, 0)
       .setDepth(10);
     this.add
-      .text(cx, kickerY + 58, i18n.t('menu.subtitle'), {
+      .text(cx, kickerY + 64, i18n.t('menu.subtitle'), {
         fontFamily: 'sans-serif',
-        fontSize: '23px',
+        fontSize: '27px',
         color: '#a6c5d1',
         align: 'center',
       })
@@ -364,10 +421,7 @@ export class MenuScene extends Phaser.Scene {
       i18n.t('menu.chapter1Description'),
       i18n.t(chapterComplete ? 'menu.chapter1Complete' : 'menu.chapter1Status'),
       true,
-      () => {
-        gameState.selectedChapter = 1;
-        this.scene.start(SceneKeys.Opening, { startWithNarration: true });
-      },
+      () => this.startChapter(1),
     );
     this.addChapterCard(
       1365,
@@ -377,14 +431,29 @@ export class MenuScene extends Phaser.Scene {
       i18n.t('menu.chapter2Description'),
       i18n.t('menu.chapter2Status'),
       true,
-      () => {
-        gameState.selectedChapter = 2;
-        this.scene.start(SceneKeys.Chapter2Lab);
-      },
+      () => this.startChapter(2),
     );
 
     this.addMenuButton(112, GAME_HEIGHT - 76, 300, i18n.t('menu.backToTitle'), false, () => {
       this.scene.restart({ screen: 'title' } satisfies MenuSceneData);
+    });
+  }
+
+  private startChapter(chapter: 1 | 2): void {
+    if (this.chapterTransitionStarted) return;
+    this.chapterTransitionStarted = true;
+    gameState.selectedChapter = chapter;
+    this.input.enabled = false;
+
+    // Start on the next game tick. This prevents the chapter-card pointer-up
+    // event from leaking into the newly created scene and immediately blocking
+    // or activating its first modal.
+    this.time.delayedCall(0, () => {
+      if (chapter === 1) {
+        this.scene.start(SceneKeys.Opening, { startWithNarration: true });
+        return;
+      }
+      this.scene.start(SceneKeys.Chapter2Lab);
     });
   }
 
@@ -454,6 +523,10 @@ export class MenuScene extends Phaser.Scene {
     onClick: () => void,
   ): Phaser.GameObjects.Container {
     const height = primary ? 62 : 52;
+    const glow = this.add
+      .rectangle(0, 0, width + 12, height + 12, 0x168b82, 0)
+      .setStrokeStyle(5, 0xa4fff5, primary ? 0.68 : 0)
+      .setAlpha(primary ? 0.18 : 0);
     const background = this.add
       .rectangle(0, 0, width, height, primary ? 0x168b82 : 0x092d40, primary ? 0.98 : 0.9)
       .setStrokeStyle(2, primary ? 0xa4fff5 : 0x4f8292, primary ? 0.74 : 0.44)
@@ -466,7 +539,18 @@ export class MenuScene extends Phaser.Scene {
         fontStyle: primary ? 'bold' : 'normal',
       })
       .setOrigin(0.5);
-    const container = this.add.container(x + width / 2, y, [background, text]).setDepth(15);
+    const container = this.add.container(x + width / 2, y, [glow, background, text]).setDepth(15);
+    if (primary) {
+      this.tweens.add({
+        targets: glow,
+        alpha: { from: 0.12, to: 0.72 },
+        scale: { from: 0.995, to: 1.035 },
+        duration: 760,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
     background.on(Phaser.Input.Events.POINTER_OVER, () => {
       background.setFillStyle(primary ? 0x20a198 : 0x10465b, 1);
       container.setScale(1.02);

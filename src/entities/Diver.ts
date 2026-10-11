@@ -3,10 +3,11 @@ import type { InputState } from '../input/InputAdapter';
 import { CHAPTER1_DIVER_FRAME_KEYS } from '../graphics/assetManifest';
 
 /** Diver visual radius in pixels. */
-const RADIUS = 33;
+const RADIUS = 50;
 /** Maximum swim speed in pixels per second. */
 const MAX_SPEED = 390;
 const ASSET_DISPLAY_SIZE = 176;
+const VISUAL_SCALE = 1.5;
 const ASSET_IDLE_FRAME = 0;
 const SWIM_FRAME_DURATION = 75;
 const IDLE_BOB_HEIGHT = 3;
@@ -30,7 +31,9 @@ export class Diver {
   private moving = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    const availableFrameKeys = CHAPTER1_DIVER_FRAME_KEYS.filter((key) => scene.textures.exists(key));
+    const availableFrameKeys = CHAPTER1_DIVER_FRAME_KEYS.filter((key) =>
+      scene.textures.exists(key),
+    );
     if (availableFrameKeys.length > 0) {
       this.assetFrameKeys = availableFrameKeys;
       const sprite = scene.add
@@ -38,7 +41,7 @@ export class Diver {
         .setOrigin(0.5)
         .setDisplaySize(ASSET_DISPLAY_SIZE, ASSET_DISPLAY_SIZE);
       this.assetSprite = sprite;
-      this.visual = scene.add.container(0, 0, [sprite]);
+      this.visual = scene.add.container(0, 0, [sprite]).setScale(VISUAL_SCALE);
       this.root = scene.add.container(x, y, [this.visual]).setDepth(10);
       this.addIdleMotion(scene);
       return;
@@ -54,7 +57,9 @@ export class Diver {
     const mask = scene.add.circle(24, -4, 15, 0xbfe9ff).setStrokeStyle(3, 0x0a2a43);
     const lens = scene.add.circle(28, -4, 8, 0x04121f);
 
-    this.visual = scene.add.container(0, 0, [fin, tank, body, belly, mask, lens]);
+    this.visual = scene.add
+      .container(0, 0, [fin, tank, body, belly, mask, lens])
+      .setScale(VISUAL_SCALE);
     this.root = scene.add.container(x, y, [this.visual]).setDepth(10);
 
     // Gentle idle bob so the diver feels alive even when stationary.
@@ -95,7 +100,7 @@ export class Diver {
       // Face the travel direction; flip so the diver never appears upside-down.
       const angle = Math.atan2(this.velocity.y, this.velocity.x);
       this.visual.rotation = angle;
-      this.visual.scaleY = Math.abs(angle) > Math.PI / 2 ? -1 : 1;
+      this.visual.scaleY = (Math.abs(angle) > Math.PI / 2 ? -1 : 1) * VISUAL_SCALE;
     }
 
     const nextX = this.root.x + this.velocity.x * dt;

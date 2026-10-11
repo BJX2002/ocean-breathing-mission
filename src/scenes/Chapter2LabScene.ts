@@ -3,20 +3,26 @@ import { GAME_HEIGHT, GAME_WIDTH, Palette, SceneKeys } from '../config/constants
 import { eventBus } from '../events/EventBus';
 import { CHAPTER2_SCIENTIST_FRAME_KEYS } from '../graphics/assetManifest';
 import { i18n } from '../i18n/LocaleService';
+import { experiencePreferences } from '../state/ExperiencePreferences';
 import { gameState } from '../state/GameState';
 import type { DepthZone, Sensor } from '../types';
 import {
   DEMO_LOW_OXYGEN_THRESHOLD_MG_L,
   DEMO_DEPLOYMENT_SCENARIO,
+  createDeploymentRunSnapshot,
   demoDoValueAtGridIndex,
+  demoSensorHasSignalAtHour,
   deploymentCost,
   evaluateDeployment,
   gridPlacement,
   providesContinuousCoverage,
+  repairCost,
   sensorSupportsDepth,
+  totalDeploymentCost,
+  type DeploymentCellRecord,
   type DeploymentEvaluation,
+  type DeploymentRunSnapshot,
 } from '../simulation/DeploymentRules';
-import { DoTimelineChart } from '../ui/DoTimelineChart';
 import { createResearchSurface, ResearchButton } from '../ui/ResearchUi';
 
 type LabZoneId = 'evidence' | 'workbench' | 'console';
@@ -33,10 +39,11 @@ interface LabZoneView {
 
 const FLOOR_Y = 962;
 const WALK_SPEED = 330;
+const EVIDENCE_NEUTRAL_COLOR = 0x7895a0;
 
 /**
  * Chapter 2 vertical slice: walk through the vessel lab, interpret Chapter 1
- * evidence, assemble a sensing-film node, then preview network deployment.
+ * evidence, test a next-generation dissolved oxygen sensor, then preview network deployment.
  */
 export class Chapter2LabScene extends Phaser.Scene {
   private scientist!: Phaser.GameObjects.Sprite;
@@ -59,15 +66,54 @@ export class Chapter2LabScene extends Phaser.Scene {
   private speechBubble: Phaser.GameObjects.Container | null = null;
   private readonly deploymentPlacements = new Map<number, string>();
   private deploymentRunComplete = false;
-  private deploymentDetectedEvent = false;
+  private deploymentRunSnapshot: DeploymentRunSnapshot | null = null;
+  private readonly repairedDeploymentCells = new Set<number>();
+  private deploymentRepairSpend = 0;
   private monitoringComparisonComplete = false;
+  private deploymentToolRound = 0;
+  private activeNarrationUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor() {
     super(SceneKeys.Chapter2Lab);
   }
 
+  init(): void {
+    // Phaser reuses Scene instances. Clear every transient reference before a
+    // replay from chapter select so stale modal/input state cannot freeze the
+    // lab on re-entry.
+    this.modalRoot = null;
+    this.targetX = null;
+    this.pendingInteractionZoneId = null;
+    this.highlightedZoneId = null;
+    this.speechBubble = null;
+    this.toast = null;
+    this.toastTimer = null;
+    this.evidenceReviewed = false;
+    this.sensorUnlocked = false;
+    this.consoleVisited = false;
+    this.monitoringComparisonComplete = false;
+    this.deploymentToolRound = 0;
+    this.deploymentRunComplete = false;
+    this.deploymentRunSnapshot = null;
+    this.deploymentRepairSpend = 0;
+    this.activeNarrationUtterance = null;
+    this.zones.length = 0;
+    this.progressDots.length = 0;
+    this.deploymentPlacements.clear();
+    this.repairedDeploymentCells.clear();
+  }
+
   create(): void {
+    this.input.enabled = true;
+    if (this.input.keyboard !== null) {
+      this.input.keyboard.enabled = true;
+      this.input.keyboard.resetKeys();
+    }
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Chapter2Lab });
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      this.activeNarrationUtterance = null;
+    });
     this.createLabBackground();
     this.createHeader();
     this.createInteractionZones();
@@ -75,6 +121,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.createControls();
     this.refreshZoneStates();
     this.showLabIntro();
+    this.sharpenVisibleText();
     if (gameState.debugMode) this.applyDebugScreenRequest();
   }
 
@@ -86,6 +133,11 @@ export class Chapter2LabScene extends Phaser.Scene {
       this.closeModal();
       if (requested === 'evidence') {
         this.showEvidenceModal();
+        return;
+      }
+      if (requested === 'experiment') {
+        this.evidenceReviewed = true;
+        this.showExperimentModal();
         return;
       }
       if (requested === 'unlock') {
@@ -107,11 +159,51 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.showMonitoringComparisonModal();
         return;
       }
+      if (requested === 'deployment-result') {
+        this.showDeploymentResultModal();
+        return;
+      }
+      if (requested === 'deployment-result-vessel' || requested === 'deployment-result-fixed') {
+        const sensorId =
+          requested === 'deployment-result-vessel' ? 'vessel-sampling' : 'fixed-probe';
+        const sensor = gameState.getData().sensors.find((candidate) => candidate.id === sensorId);
+        if (sensor === undefined) return;
+        const placements = Array.from({ length: 9 }, (_, gridIndex) => {
+          const placement = gridPlacement(gridIndex, sensor);
+          return placement === null ? [] : [placement];
+        }).flat();
+        this.deploymentRunSnapshot = createDeploymentRunSnapshot(placements);
+        this.deploymentRunComplete = true;
+        this.showDeploymentResultModal();
+        return;
+      }
+      if (requested === 'deployment-result-success') {
+        const sensingFilm = gameState
+          .getData()
+          .sensors.find((sensor) => sensor.id === 'sensing-film-node');
+        if (sensingFilm === undefined) return;
+        const placements = Array.from({ length: 9 }, (_, gridIndex) => {
+          const placement = gridPlacement(gridIndex, sensingFilm);
+          return placement === null ? [] : [placement];
+        }).flat();
+        this.deploymentRunSnapshot = createDeploymentRunSnapshot(placements);
+        this.deploymentRunComplete = true;
+        this.showDeploymentResultModal();
+        return;
+      }
       if (requested === 'summary') {
         this.showLearningSummary();
         return;
       }
-      if (requested === 'quiz') this.showFinalQuiz();
+      if (requested === 'quiz') {
+        this.showFinalQuiz();
+        return;
+      }
+      if (requested === 'quiz-sensor') {
+        this.showFinalQuizSensorQuestion();
+        return;
+      }
+      if (requested === 'ending') this.showMissionCelebration();
     });
   }
 
@@ -182,25 +274,27 @@ export class Chapter2LabScene extends Phaser.Scene {
       })
       .setDepth(20);
     this.add
-      .text(GAME_WIDTH - 72, 52, i18n.t('lab.subtitle'), {
+      .text(GAME_WIDTH - 72, 42, i18n.t('lab.subtitle'), {
         fontFamily: 'sans-serif',
-        fontSize: '21px',
-        color: '#b5d5df',
+        fontSize: '28px',
+        color: '#c9e7ed',
+        fontStyle: 'bold',
       })
       .setOrigin(1, 0)
       .setDepth(20);
 
     this.progress = this.add
-      .text(GAME_WIDTH - 72, 82, '', {
+      .text(GAME_WIDTH - 72, 80, '', {
         fontFamily: 'monospace',
-        fontSize: '17px',
-        color: '#93b3bf',
+        fontSize: '22px',
+        color: '#b5d5df',
+        fontStyle: 'bold',
       })
       .setOrigin(1, 0)
       .setDepth(20);
 
     [0, 1, 2].forEach((index) => {
-      const x = GAME_WIDTH - 250 + index * 38;
+      const x = GAME_WIDTH - 330 + index * 38;
       const dot = this.add.circle(x, 89, 8, 0x4d6873, 1).setDepth(21);
       this.progressDots.push(dot);
       if (index < 2) this.add.rectangle(x + 19, 89, 22, 2, 0x4d6873, 0.65).setDepth(20);
@@ -209,15 +303,17 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.add
       .text(72, GAME_HEIGHT - 58, i18n.t('lab.controls'), {
         fontFamily: 'sans-serif',
-        fontSize: '20px',
+        fontSize: '22px',
         color: '#a7c9d5',
+        fontStyle: 'bold',
       })
       .setDepth(20);
     this.prompt = this.add
       .text(GAME_WIDTH - 72, GAME_HEIGHT - 63, '', {
         fontFamily: 'sans-serif',
-        fontSize: '21px',
+        fontSize: '22px',
         color: '#efffff',
+        fontStyle: 'bold',
         backgroundColor: '#126f6a',
         padding: { x: 18, y: 9 },
       })
@@ -257,7 +353,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       const glyph = this.add.graphics().setPosition(x, y).setDepth(11);
       this.drawZoneGlyph(glyph, id, index === 0 ? 0x8ff7e8 : 0x7f98a2);
       const labelPlate = this.add
-        .rectangle(x, y + 105, 248, 58, 0x06141e, 0.76)
+        .rectangle(x, y + 108, 260, 72, 0x06141e, 0.76)
         .setStrokeStyle(1, index === 0 ? Palette.accent : 0x66808b, 0.46)
         .setDepth(11);
       const title = this.add
@@ -272,8 +368,9 @@ export class Chapter2LabScene extends Phaser.Scene {
       const status = this.add
         .text(x, y + 120, '', {
           fontFamily: 'monospace',
-          fontSize: '15px',
+          fontSize: '20px',
           color: Palette.accentText,
+          fontStyle: 'bold',
         })
         .setOrigin(0.5)
         .setDepth(12);
@@ -359,6 +456,37 @@ export class Chapter2LabScene extends Phaser.Scene {
     graphics.fillTriangle(-6 * scale, 31 * scale, 6 * scale, 31 * scale, 0, 41 * scale);
   }
 
+  /** Draws what the old record actually contains, not the missing monitoring dimension. */
+  private drawObservedEvidenceGlyph(
+    graphics: Phaser.GameObjects.Graphics,
+    dimension: 'time' | 'location' | 'depth',
+    color: number,
+    scale = 1,
+  ): void {
+    graphics
+      .clear()
+      .lineStyle(4 * scale, color, 1)
+      .fillStyle(color, 0.2);
+    if (dimension === 'time') {
+      graphics.lineBetween(-42 * scale, 26 * scale, 42 * scale, 26 * scale);
+      graphics.lineBetween(-42 * scale, -28 * scale, -42 * scale, 26 * scale);
+      graphics.fillCircle(6 * scale, -2 * scale, 9 * scale);
+      graphics.strokeCircle(6 * scale, -2 * scale, 14 * scale);
+      return;
+    }
+    if (dimension === 'location') {
+      graphics.strokeRoundedRect(-42 * scale, -30 * scale, 84 * scale, 60 * scale, 8 * scale);
+      graphics.strokeCircle(0, -5 * scale, 11 * scale);
+      graphics.fillCircle(0, -5 * scale, 5 * scale);
+      graphics.lineBetween(0, 6 * scale, 0, 24 * scale);
+      return;
+    }
+    graphics.strokeRoundedRect(-34 * scale, -34 * scale, 68 * scale, 68 * scale, 7 * scale);
+    graphics.fillRect(-30 * scale, -28 * scale, 60 * scale, 18 * scale);
+    graphics.lineBetween(-24 * scale, -3 * scale, 24 * scale, -3 * scale);
+    graphics.fillCircle(0, -19 * scale, 6 * scale);
+  }
+
   private updateScientistBubble(zoneId: LabZoneId | null): void {
     this.speechBubble?.destroy(true);
     this.speechBubble = null;
@@ -390,7 +518,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const text = this.add
       .text(0, -13, i18n.t(key), {
         fontFamily: 'sans-serif',
-        fontSize: '20px',
+        fontSize: '25px',
         color: '#09202b',
         align: 'center',
         wordWrap: { width: width - 42, useAdvancedWrap: true },
@@ -410,11 +538,11 @@ export class Chapter2LabScene extends Phaser.Scene {
     }
     this.scientist = this.add
       .sprite(330, FLOOR_Y, CHAPTER2_SCIENTIST_FRAME_KEYS[0] ?? '')
-      .setDisplaySize(380, 380)
+      .setDisplaySize(684, 684)
       .setOrigin(0.5, 0.86)
       .setDepth(18);
     this.add
-      .ellipse(330, FLOOR_Y - 8, 118, 20, 0x02080d, 0.35)
+      .ellipse(330, FLOOR_Y - 8, 190, 28, 0x02080d, 0.35)
       .setDepth(15)
       .setName('scientist-shadow');
   }
@@ -553,7 +681,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       i18n.t('lab.evidenceTitle'),
       i18n.t('lab.evidenceBody'),
       1660,
-      880,
+      940,
     );
     type EvidenceDimension = 'time' | 'location' | 'depth';
     const cards: ReadonlyArray<readonly [EvidenceDimension, number, string, string, number]> = [
@@ -563,65 +691,86 @@ export class Chapter2LabScene extends Phaser.Scene {
     ];
     const targets = new Map<
       EvidenceDimension,
-      { panel: Phaser.GameObjects.Rectangle; text: Phaser.GameObjects.Text; x: number; y: number }
+      {
+        panel: Phaser.GameObjects.Rectangle;
+        text: Phaser.GameObjects.Text;
+        cardPanel: Phaser.GameObjects.Rectangle;
+        cardNumber: Phaser.GameObjects.Text;
+        observedGlyph: Phaser.GameObjects.Graphics;
+        x: number;
+        y: number;
+        roleColor: number;
+      }
     >();
     const matched = new Set<EvidenceDimension>(
       this.evidenceReviewed ? ['time', 'location', 'depth'] : [],
     );
     const progressText = this.add
-      .text(960, 340, '', {
+      .text(960, 330, '', {
         fontFamily: 'monospace',
-        fontSize: '19px',
+        fontSize: '21px',
         color: '#f0c95a',
       })
       .setOrigin(0.5);
     root.add(progressText);
 
     cards.forEach(([dimension, x, sampleKey, targetKey, color], index) => {
+      const alreadyMatched = matched.has(dimension);
+      const visibleColor = alreadyMatched ? color : EVIDENCE_NEUTRAL_COLOR;
       const panel = this.add
-        .rectangle(x, 500, 410, 264, 0x092736, 0.96)
-        .setStrokeStyle(2, color, 0.52);
+        .rectangle(x, 510, 410, 300, 0x092736, 0.96)
+        .setStrokeStyle(alreadyMatched ? 3 : 2, visibleColor, alreadyMatched ? 0.9 : 0.52);
       const number = this.add
-        .text(x - 168, 390, `0${index + 1}`, {
+        .text(x - 168, 376, `0${index + 1}`, {
           fontFamily: 'monospace',
-          fontSize: '17px',
-          color: Phaser.Display.Color.IntegerToColor(color).rgba,
+          fontSize: '18px',
+          color: Phaser.Display.Color.IntegerToColor(visibleColor).rgba,
           fontStyle: 'bold',
         })
         .setAlpha(0.9);
-      const icon = this.add.graphics().setPosition(x, 442);
-      this.drawEvidenceGlyph(icon, dimension, color);
+      const icon = this.add.graphics().setPosition(x, 423);
+      this.drawObservedEvidenceGlyph(icon, dimension, visibleColor);
       const sample = this.add
-        .text(x, 505, i18n.t(sampleKey), {
+        .text(x, 510, i18n.t(sampleKey), {
           fontFamily: 'sans-serif',
-          fontSize: '22px',
+          fontSize: '24px',
           color: Palette.textLight,
           align: 'center',
-          lineSpacing: 7,
-          wordWrap: { width: 334, useAdvancedWrap: true },
+          lineSpacing: 8,
+          wordWrap: { width: 350, useAdvancedWrap: true },
         })
         .setOrigin(0.5);
       const target = this.add
-        .rectangle(x, 596, 280, 58, 0x04151f, 0.9)
-        .setStrokeStyle(2, color, 0.45);
+        .rectangle(x, 616, 300, 66, 0x04151f, 0.9)
+        .setStrokeStyle(alreadyMatched ? 3 : 2, visibleColor, alreadyMatched ? 1 : 0.45);
       const targetText = this.add
-        .text(x, 596, i18n.t(targetKey), {
+        .text(x, 616, i18n.t(targetKey), {
           fontFamily: 'monospace',
-          fontSize: '16px',
+          fontSize: '18px',
           color: '#73909d',
           align: 'center',
         })
-        .setOrigin(0.5);
-      targets.set(dimension, { panel: target, text: targetText, x, y: 596 });
+        .setOrigin(0.5)
+        .setVisible(!alreadyMatched);
+      targets.set(dimension, {
+        panel: target,
+        text: targetText,
+        cardPanel: panel,
+        cardNumber: number,
+        observedGlyph: icon,
+        x,
+        y: 616,
+        roleColor: color,
+      });
       root.add([panel, number, icon, sample, target, targetText]);
     });
 
     const tray = this.add
-      .rectangle(960, 746, 1220, 116, 0x041722, 0.92)
+      .rectangle(960, 788, 1220, 130, 0x041722, 0.92)
       .setStrokeStyle(1, 0x4e7d8d, 0.48);
-    const trayLabel = this.add.text(380, 686, i18n.t('lab.evidenceTray'), {
+    const trayLabel = this.add.text(350, 687, i18n.t('lab.evidenceTray'), {
       fontFamily: 'monospace',
-      fontSize: '17px',
+      fontSize: '19px',
       color: '#7fa8b7',
     });
     root.add([tray, trayLabel]);
@@ -632,9 +781,9 @@ export class Chapter2LabScene extends Phaser.Scene {
       ['location', 1320, 'lab.evidenceTokenLocation', 0x57d4cb],
     ];
     const status = this.add
-      .text(960, 838, i18n.t('lab.evidenceDragHint'), {
+      .text(960, 877, i18n.t('lab.evidenceDragHint'), {
         fontFamily: 'sans-serif',
-        fontSize: '19px',
+        fontSize: '20px',
         color: '#8eadb9',
         align: 'center',
       })
@@ -655,32 +804,38 @@ export class Chapter2LabScene extends Phaser.Scene {
 
     const draggableTokens: Array<Phaser.GameObjects.Container> = [];
     tokenDefinitions.forEach(([dimension, homeX, labelKey, color]) => {
-      const body = this.add.rectangle(0, 0, 270, 66, 0x103b49, 0.98).setStrokeStyle(2, color, 0.9);
-      const glyph = this.add.graphics().setPosition(-96, 0);
-      this.drawEvidenceGlyph(glyph, dimension, color, 0.58);
+      const body = this.add
+        .rectangle(0, 0, 286, 70, 0x103b49, 0.98)
+        .setStrokeStyle(2, EVIDENCE_NEUTRAL_COLOR, 0.9);
+      const glyph = this.add.graphics().setPosition(-102, 0);
+      this.drawEvidenceGlyph(glyph, dimension, EVIDENCE_NEUTRAL_COLOR, 0.58);
       const label = this.add
         .text(18, 0, i18n.t(labelKey), {
           fontFamily: 'sans-serif',
-          fontSize: '19px',
+          fontSize: '21px',
           color: Palette.textLight,
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
       const target = targets.get(dimension);
       const startX = matched.has(dimension) && target !== undefined ? target.x : homeX;
-      const startY = matched.has(dimension) && target !== undefined ? target.y : 752;
+      const startY = matched.has(dimension) && target !== undefined ? target.y : 792;
       const token = this.add
         .container(startX, startY, [body, glyph, label])
-        .setSize(270, 66)
+        .setSize(286, 70)
         .setDepth(215)
         .setData('dimension', dimension)
+        .setData('roleColor', color)
+        .setData('glyph', glyph)
         .setData('homeX', homeX)
-        .setData('homeY', 752);
+        .setData('homeY', 792);
       if (!matched.has(dimension)) {
         token.setInteractive({ useHandCursor: true });
         this.input.setDraggable(token);
       } else {
-        body.setFillStyle(0x185143, 1);
+        body.setFillStyle(0x185143, 1).setStrokeStyle(3, color, 1);
+        glyph.clear();
+        this.drawEvidenceGlyph(glyph, dimension, color, 0.58);
       }
       draggableTokens.push(token);
       root.add(token);
@@ -713,11 +868,21 @@ export class Chapter2LabScene extends Phaser.Scene {
         target !== undefined &&
         Phaser.Math.Distance.Between(token.x, token.y, target.x, target.y) < 155
       ) {
+        const roleColor = token.getData('roleColor') as number;
+        const tokenGlyph = token.getData('glyph') as Phaser.GameObjects.Graphics;
         token.setPosition(target.x, target.y).disableInteractive();
-        (token.first as Phaser.GameObjects.Rectangle).setFillStyle(0x185143, 1);
+        (token.first as Phaser.GameObjects.Rectangle)
+          .setFillStyle(0x185143, 1)
+          .setStrokeStyle(3, roleColor, 1);
+        tokenGlyph.clear();
+        this.drawEvidenceGlyph(tokenGlyph, dimension, roleColor, 0.58);
         target.text.setVisible(false);
-        target.panel.setFillStyle(0x17483d, 1).setStrokeStyle(3, 0x8ce6a3, 1);
+        target.panel.setFillStyle(0x17483d, 1).setStrokeStyle(3, target.roleColor, 1);
+        target.cardPanel.setStrokeStyle(3, roleColor, 0.9);
+        target.cardNumber.setColor(Phaser.Display.Color.IntegerToColor(roleColor).rgba);
+        this.drawObservedEvidenceGlyph(target.observedGlyph, dimension, roleColor);
         matched.add(dimension);
+        status.setText(i18n.t('lab.evidenceMatched')).setColor('#91e6a7');
         this.tweens.add({ targets: token, scale: 1.06, duration: 150, yoyo: true });
         refresh();
       } else {
@@ -743,7 +908,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const recordButton = this.addModalButton(
       root,
       960,
-      920,
+      956,
       420,
       i18n.t('lab.evidenceRecord'),
       true,
@@ -755,7 +920,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.targetX = 960;
       },
     );
-    this.addModalButton(root, 360, 920, 280, i18n.t('common.backStep'), false, () => {
+    this.addModalButton(root, 360, 956, 280, i18n.t('common.backStep'), false, () => {
       this.closeModal();
     });
     refresh();
@@ -948,6 +1113,72 @@ export class Chapter2LabScene extends Phaser.Scene {
       film,
     ]);
 
+    const coachRing = this.add
+      .ellipse(300, 535, 236, 144, 0xf4d35e, 0.035)
+      .setStrokeStyle(5, 0xf4d35e, 1);
+    const coachArrow = this.add.graphics();
+    const coachText = this.add
+      .text(500, 458, i18n.t('lab.experimentCoachDrag'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#10202a',
+        fontStyle: 'bold',
+        backgroundColor: '#f4d35e',
+        padding: { x: 13, y: 7 },
+      })
+      .setOrigin(0.5);
+    root.add([coachRing, coachArrow, coachText]);
+
+    let coachPulse: Phaser.Tweens.Tween | null = null;
+    let coachButtonPulse: Phaser.Tweens.Tween | null = null;
+    const renderCoachmark = (activeStep: number): void => {
+      coachPulse?.stop();
+      coachButtonPulse?.stop();
+      lightButton.setScale(1).setAlpha(activeStep > 1 ? 0.72 : activeStep === 1 ? 1 : 0.42);
+      readerButton.setScale(1).setAlpha(activeStep > 2 ? 0.72 : activeStep === 2 ? 1 : 0.42);
+      coachRing
+        .setScale(1)
+        .setAlpha(1)
+        .setVisible(activeStep < 3);
+      coachArrow.clear().setVisible(activeStep < 3);
+      coachText.setVisible(activeStep < 3);
+      if (activeStep >= 3) return;
+
+      coachArrow.lineStyle(5, 0xf4d35e, 0.96).fillStyle(0xf4d35e, 0.96);
+      if (activeStep === 0) {
+        coachRing.setPosition(300, 535).setDisplaySize(236, 144);
+        coachArrow.lineBetween(430, 535, 548, 535);
+        coachArrow.fillTriangle(574, 535, 548, 520, 548, 550);
+        coachText.setPosition(500, 458).setText(i18n.t('lab.experimentCoachDrag'));
+      } else {
+        const buttonX = activeStep === 1 ? 1110 : 1510;
+        coachRing.setPosition(buttonX, 680).setDisplaySize(310, 88);
+        coachArrow.lineBetween(buttonX, 604, buttonX, 628);
+        coachArrow.fillTriangle(buttonX, 646, buttonX - 13, 626, buttonX + 13, 626);
+        coachText.setPosition(buttonX, 584).setText(i18n.t('lab.experimentCoachClick'));
+      }
+      coachPulse = this.tweens.add({
+        targets: coachRing,
+        alpha: 0.38,
+        duration: 620,
+        ease: 'Sine.InOut',
+        yoyo: true,
+        repeat: -1,
+      });
+      if (activeStep === 1 || activeStep === 2) {
+        const activeButton = activeStep === 1 ? lightButton : readerButton;
+        coachButtonPulse = this.tweens.add({
+          targets: activeButton,
+          scale: { from: 1, to: 1.045 },
+          alpha: { from: 0.72, to: 1 },
+          duration: 430,
+          ease: 'Sine.InOut',
+          yoyo: true,
+          repeat: -1,
+        });
+      }
+    };
+
     const lightButton = this.addModalButton(
       root,
       1110,
@@ -971,6 +1202,7 @@ export class Chapter2LabScene extends Phaser.Scene {
           repeat: 3,
         });
         this.tweens.add({ targets: slot, scale: 1.03, duration: 180, yoyo: true, repeat: 2 });
+        renderCoachmark(2);
       },
     ).setAlpha(0.42);
     const readerButton = this.addModalButton(
@@ -983,6 +1215,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       () => {
         if (step !== 2) return;
         step = 3;
+        renderCoachmark(3);
         step3.setColor('#91e6a7');
         readerButton.setAlpha(0.72);
         dataDots.forEach((dot, index) => {
@@ -1005,12 +1238,12 @@ export class Chapter2LabScene extends Phaser.Scene {
     ).setAlpha(0.42);
 
     const notePanel = this.add
-      .rectangle(960, 814, 1390, 92, 0x061d2a, 0.94)
+      .rectangle(960, 790, 1390, 82, 0x061d2a, 0.94)
       .setStrokeStyle(1, 0x598799, 0.48);
     const note = this.add
-      .text(960, 814, i18n.t('lab.scienceNote'), {
+      .text(960, 790, i18n.t('lab.scienceNote'), {
         fontFamily: 'sans-serif',
-        fontSize: '22px',
+        fontSize: '23px',
         color: '#a9c8d2',
         align: 'center',
         lineSpacing: 5,
@@ -1018,6 +1251,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     root.add([notePanel, note]);
+    renderCoachmark(0);
     this.addModalButton(root, 340, 920, 280, i18n.t('common.backStep'), false, () => {
       this.closeModal();
     });
@@ -1043,6 +1277,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         step2.setColor('#f0c95a');
         lightButton.setAlpha(1);
         flow.setAlpha(1);
+        renderCoachmark(1);
       } else {
         this.tweens.add({ targets: film, x: 300, y: 535, duration: 240, ease: 'Sine.Out' });
       }
@@ -1052,52 +1287,164 @@ export class Chapter2LabScene extends Phaser.Scene {
     root.once('destroy', () => {
       this.input.off(Phaser.Input.Events.DRAG, onDrag);
       this.input.off(Phaser.Input.Events.DRAG_END, onDragEnd);
+      coachPulse?.stop();
+      coachButtonPulse?.stop();
       unlockTimer?.remove(false);
     });
   }
 
   private showUnlockModal(): void {
+    // This is a quiet visual reference screen. Stop any explanation left from
+    // the hands-on experiment instead of carrying speech into the unlock card.
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    this.activeNarrationUtterance = null;
     const root = this.createModal(
-      'COMPONENT UNLOCKED  /  01',
+      i18n.t('lab.unlockEyebrow'),
       i18n.t('lab.unlockTitle'),
       i18n.t('lab.unlockBody'),
-      1580,
-      900,
+      1640,
+      920,
     );
-    const flowPanel = createResearchSurface(this, 960, 485, 1180, 104, {
-      fill: 0x0b3a48,
-      border: Palette.gold,
-      borderAlpha: 0.7,
-      radius: 16,
-      shadow: false,
-    });
-    const flow = this.add
-      .text(960, 485, i18n.t('lab.principleFlow'), {
-        fontFamily: 'sans-serif',
-        fontSize: '32px',
-        color: '#f7fcff',
-        fontStyle: 'bold',
-        align: 'center',
-        wordWrap: { width: 1080, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5);
-    const productCard = createResearchSurface(this, 960, 680, 500, 236, {
+
+    const productCard = createResearchSurface(this, 500, 585, 560, 430, {
       fill: Palette.paper,
       border: Palette.gold,
-      borderAlpha: 0.9,
-      radius: 18,
+      borderAlpha: 0.88,
+      radius: 22,
       shadow: true,
     });
-    const product = this.add.image(960, 662, 'chapter2-do-sensor-product').setDisplaySize(330, 186);
-    const label = this.add
-      .text(960, 778, i18n.t('lab.productReference'), {
+    const productHeading = this.add
+      .text(500, 390, i18n.t('lab.unlockProductHeading'), {
+        fontFamily: 'monospace',
+        fontSize: '19px',
+        color: '#6c5319',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    const product = this.add.image(500, 560, 'chapter2-do-sensor-product').setDisplaySize(470, 274);
+    const productReference = this.add
+      .text(500, 770, i18n.t('lab.productReference'), {
         fontFamily: 'monospace',
         fontSize: '18px',
         color: '#294650',
         fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 520, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
-    root.add([flowPanel, flow, productCard, product, label]);
+
+    const columnDivider = this.add.rectangle(845, 590, 2, 450, Palette.accent, 0.32);
+    const principleHeading = this.add
+      .text(1290, 375, i18n.t('lab.unlockPrincipleHeading'), {
+        fontFamily: 'monospace',
+        fontSize: '23px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    const principleConnector = this.add.graphics();
+    principleConnector.lineStyle(4, 0x4b8791, 0.68).fillStyle(0x4b8791, 0.9);
+    principleConnector.lineBetween(1148, 490, 1170, 490);
+    principleConnector.fillTriangle(1182, 490, 1168, 481, 1168, 499);
+    principleConnector.lineBetween(1408, 490, 1430, 490);
+    principleConnector.fillTriangle(1442, 490, 1428, 481, 1428, 499);
+
+    const principleSteps = [
+      ['01', 1030, 'lab.unlockPrincipleOxygen'],
+      ['02', 1290, 'lab.unlockPrincipleSignal'],
+      ['03', 1550, 'lab.unlockPrincipleData'],
+    ] as const;
+    const principleObjects: Phaser.GameObjects.GameObject[] = [];
+    principleSteps.forEach(([number, x, key]) => {
+      const card = createResearchSurface(this, x, 490, 220, 154, {
+        fill: 0x0b3442,
+        border: Palette.accent,
+        borderAlpha: 0.46,
+        radius: 16,
+        shadow: false,
+      });
+      const numberBubble = this.add
+        .circle(x, 440, 22, Palette.gold, 0.16)
+        .setStrokeStyle(2, Palette.gold, 0.82);
+      const numberText = this.add
+        .text(x, 440, number, {
+          fontFamily: 'monospace',
+          fontSize: '17px',
+          color: '#f5dc83',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      const stepText = this.add
+        .text(x, 512, i18n.t(key), {
+          fontFamily: 'sans-serif',
+          fontSize: '23px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 5,
+          wordWrap: { width: 192, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      principleObjects.push(card, numberBubble, numberText, stepText);
+    });
+
+    const advantagesHeading = this.add
+      .text(1290, 645, i18n.t('lab.unlockAdvantagesHeading'), {
+        fontFamily: 'monospace',
+        fontSize: '23px',
+        color: Palette.accentText,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5);
+    const advantages = [
+      [1030, 'lab.unlockAdvantageLongTerm'],
+      [1290, 'lab.unlockAdvantageMultiPoint'],
+      [1550, 'lab.unlockAdvantageReplaceable'],
+    ] as const;
+    const advantageObjects: Phaser.GameObjects.GameObject[] = [];
+    advantages.forEach(([x, key]) => {
+      const pill = createResearchSurface(this, x, 750, 230, 112, {
+        fill: 0x103f43,
+        border: 0x79dfa6,
+        borderAlpha: 0.72,
+        radius: 18,
+        shadow: false,
+      });
+      const mark = this.add
+        .text(x, 717, '✓', {
+          fontFamily: 'sans-serif',
+          fontSize: '22px',
+          color: '#9af0b0',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      const advantage = this.add
+        .text(x, 765, i18n.t(key), {
+          fontFamily: 'sans-serif',
+          fontSize: '20px',
+          color: '#e7fff0',
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 3,
+          wordWrap: { width: 204, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      advantageObjects.push(pill, mark, advantage);
+    });
+
+    root.add([
+      productCard,
+      productHeading,
+      product,
+      productReference,
+      columnDivider,
+      principleConnector,
+      principleHeading,
+      ...principleObjects,
+      advantagesHeading,
+      ...advantageObjects,
+    ]);
     this.addModalButton(root, 1120, 920, 430, i18n.t('lab.continue'), true, () => {
       this.closeModal();
       this.targetX = 1590;
@@ -1120,178 +1467,232 @@ export class Chapter2LabScene extends Phaser.Scene {
       i18n.t('lab.compareEyebrow'),
       i18n.t('lab.compareTitle'),
       i18n.t('lab.compareBody'),
-      1640,
-      920,
+      1660,
+      800,
     );
     const sensors = gameState.getData().sensors;
     const vessel = sensors.find((sensor) => sensor.id === 'vessel-sampling');
+    const fixedProbe = sensors.find((sensor) => sensor.id === 'fixed-probe');
     const sensingFilm = sensors.find((sensor) => sensor.id === 'sensing-film-node');
     const sensorName = (sensor: Sensor | undefined): string => {
       if (sensor === undefined) return '';
       return i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh;
     };
 
-    const methodSurface = createResearchSurface(this, 350, 565, 340, 430, {
-      fill: Palette.cardSoft,
-      border: Palette.gold,
-      borderAlpha: 0.46,
-      radius: 24,
-      shadow: false,
-    });
-    const methodHalo = this.add.circle(350, 475, 72, Palette.gold, 0.11);
-    const methodGlyph = this.add.graphics().setPosition(350, 475);
-    const methodType = this.add
-      .text(350, 375, '', {
-        fontFamily: 'monospace',
-        fontSize: '16px',
-        color: '#f5d778',
-        fontStyle: 'bold',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    const methodTitle = this.add
-      .text(350, 565, '', {
-        fontFamily: 'sans-serif',
-        fontSize: '26px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-        align: 'center',
-        wordWrap: { width: 280, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5);
-    const promptText = this.add
-      .text(350, 630, '', {
-        fontFamily: 'sans-serif',
-        fontSize: '21px',
-        color: '#c8e3e8',
-        align: 'center',
-        lineSpacing: 5,
-        wordWrap: { width: 280, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5, 0);
-    const resultText = this.add
-      .text(350, 770, '', {
-        fontFamily: 'sans-serif',
-        fontSize: '18px',
-        color: '#f4d678',
-        fontStyle: 'bold',
-        align: 'center',
-        lineSpacing: 4,
-        wordWrap: { width: 286, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5, 1);
-    const stageText = this.add.text(560, 326, '', {
-      fontFamily: 'monospace',
-      fontSize: '18px',
-      color: Palette.accentText,
-      fontStyle: 'bold',
-      backgroundColor: '#102f3ddd',
-      padding: { x: 12, y: 7 },
-    });
-    root.add([
-      methodSurface,
-      methodHalo,
-      methodGlyph,
-      methodType,
-      methodTitle,
-      promptText,
-      resultText,
-      stageText,
-    ]);
-
-    const chart = new DoTimelineChart(
-      this,
-      root,
-      { x: 555, y: 370, width: 1110, height: 450 },
+    const methodDefinitions = [
       {
-        thresholdMgPerL: DEMO_LOW_OXYGEN_THRESHOLD_MG_L,
-        copy: {
-          title: i18n.t('lab.chartTitle'),
-          unit: i18n.t('lab.chartUnit'),
-          emptyStatus: i18n.t('lab.chartWaiting'),
-          emptyPrompt: i18n.t('lab.chartEmptyPrompt'),
-          manualStatus: i18n.t('lab.chartManualStatus'),
-          manualHint: i18n.t('lab.chartManualHint'),
-          continuousStatus: i18n.t('lab.chartContinuousStatus'),
-          continuousHint: i18n.t('lab.chartContinuousHint'),
-          sampleLabel: i18n.t('lab.chartManualPoint'),
-          detectedLabel: i18n.t('lab.chartDetected'),
-          thresholdLabel: i18n.t('lab.chartAlert'),
-          dawnLabel: i18n.t('lab.chartDawn'),
-        },
+        sensor: vessel,
+        x: 470,
+        color: Palette.gold,
+        typeKey: 'lab.deviceSingle',
+        bodyKey: 'lab.compareManualMethodBody',
+        narrationKey: 'lab.compareManualNarration',
+        tagKey: 'lab.compareManualMethodTag',
       },
-    );
+      {
+        sensor: fixedProbe,
+        x: 960,
+        color: 0x65cbea,
+        typeKey: 'lab.deviceContinuous',
+        bodyKey: 'lab.compareFixedMethodBody',
+        narrationKey: 'lab.compareFixedNarration',
+        tagKey: 'lab.compareFixedMethodTag',
+      },
+      {
+        sensor: sensingFilm,
+        x: 1450,
+        color: Palette.accent,
+        typeKey: 'lab.deviceContinuous',
+        bodyKey: 'lab.compareSensorMethodBody',
+        narrationKey: 'lab.compareSensorNarration',
+        tagKey: 'lab.compareSensorMethodTag',
+      },
+    ] as const;
 
-    type ComparisonStep = 'manual-ready' | 'manual-result' | 'sensor-ready' | 'sensor-result';
-    let step: ComparisonStep = 'manual-ready';
-    const actionButton = new ResearchButton(this, 1280, 930, 510, 70, '', {
-      tone: 'primary',
-      fontSize: 22,
+    const methodViews: Phaser.GameObjects.Container[] = [];
+
+    methodDefinitions.forEach((method) => {
+      const surface = createResearchSurface(this, method.x, 590, 420, 360, {
+        fill: Palette.cardSoft,
+        border: method.color,
+        borderAlpha: 0.56,
+        radius: 24,
+        shadow: false,
+      });
+      const halo = this.add.circle(method.x, 490, 62, method.color, 0.12);
+      const glyph = this.add.graphics().setPosition(method.x, 490);
+      if (method.sensor !== undefined) {
+        this.drawDeviceGlyph(glyph, method.sensor, 1.35, method.color);
+      }
+      const type = this.add
+        .text(method.x, 435, i18n.t(method.typeKey), {
+          fontFamily: 'monospace',
+          fontSize: '19px',
+          color: Phaser.Display.Color.IntegerToColor(method.color).rgba,
+          fontStyle: 'bold',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+      const title = this.add
+        .text(method.x, 580, sensorName(method.sensor), {
+          fontFamily: 'sans-serif',
+          fontSize: '26px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          wordWrap: { width: 350, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      const body = this.add
+        .text(method.x, 625, i18n.t(method.bodyKey), {
+          fontFamily: 'sans-serif',
+          fontSize: i18n.getLocale() === 'en' ? '19px' : '21px',
+          color: '#d4edf1',
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 7,
+          wordWrap: { width: 370, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5, 0);
+      const tag = this.add
+        .text(method.x, 750, i18n.t(method.tagKey), {
+          fontFamily: 'monospace',
+          fontSize: '20px',
+          color: Phaser.Display.Color.IntegerToColor(method.color).rgba,
+          fontStyle: 'bold',
+          backgroundColor: '#061923aa',
+          padding: { x: 14, y: 8 },
+        })
+        .setOrigin(0.5);
+      const methodView = this.add.container(0, 0, [surface, halo, glyph, type, title, body, tag]);
+      root.add(methodView);
+      methodViews.push(methodView);
     });
-    root.add(actionButton.root);
-    this.addModalButton(root, 350, 930, 260, i18n.t('common.backStep'), false, () =>
+
+    const narrationStatus = this.add
+      .text(960, 810, i18n.t('lab.compareNarrationLead'), {
+        fontFamily: 'sans-serif',
+        fontSize: '24px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 900, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    const narrationHighlight = this.add
+      .rectangle(470, 590, 438, 378, 0xf0c95a, 0.025)
+      .setStrokeStyle(4, Palette.gold, 0.95);
+    root.add([narrationStatus, narrationHighlight]);
+
+    this.addModalButton(root, 470, 875, 260, i18n.t('common.backStep'), false, () =>
       this.closeModal(),
     );
-
-    const renderStep = (): void => {
-      const manual = step === 'manual-ready' || step === 'manual-result';
-      const activeSensor = manual ? vessel : sensingFilm;
-      methodGlyph.clear();
-      if (activeSensor !== undefined) {
-        this.drawDeviceGlyph(
-          methodGlyph,
-          activeSensor,
-          manual ? 1.65 : 1.5,
-          manual ? 0xf5d778 : 0x9cf4e5,
-        );
-      }
-      methodHalo.setFillStyle(manual ? Palette.gold : Palette.accent, 0.12);
-      methodType
-        .setText(manual ? i18n.t('lab.deviceSingle') : i18n.t('lab.deviceContinuous'))
-        .setColor(manual ? '#f5d778' : '#8ff0df');
-      methodTitle.setText(sensorName(activeSensor));
-      stageText.setText(i18n.t(manual ? 'lab.compareManualStage' : 'lab.compareSensorStage'));
-
-      if (step === 'manual-ready') {
-        promptText.setText(i18n.t('lab.compareManualPrompt'));
-        resultText.setText('');
-        actionButton.setText(i18n.t('lab.compareManualRun'));
-        chart.showEmpty();
-        return;
-      }
-      if (step === 'manual-result') {
-        promptText.setText(i18n.t('lab.compareManualPrompt'));
-        resultText.setText(i18n.t('lab.compareManualResult')).setColor('#f4d678');
-        actionButton.setText(i18n.t('lab.compareSwitchSensor'));
-        chart.showManualSample({ hour: 14, value: 6.1 });
-        return;
-      }
-      if (step === 'sensor-ready') {
-        promptText.setText(i18n.t('lab.compareSensorPrompt'));
-        resultText.setText('');
-        actionButton.setText(i18n.t('lab.compareSensorRun'));
-        chart.showEmpty();
-        return;
-      }
-      promptText.setText(i18n.t('lab.compareSensorPrompt'));
-      resultText.setText(i18n.t('lab.compareSensorResult')).setColor('#aaf2bb');
-      actionButton.setText(i18n.t('lab.compareStartNetwork'));
-      chart.showContinuousSeries();
-    };
-
-    actionButton.onPress(() => {
-      if (step === 'manual-ready') step = 'manual-result';
-      else if (step === 'manual-result') step = 'sensor-ready';
-      else if (step === 'sensor-ready') {
-        step = 'sensor-result';
+    const startButton = this.addModalButton(
+      root,
+      1270,
+      875,
+      420,
+      i18n.t('lab.compareStartNetwork'),
+      true,
+      () => {
         this.monitoringComparisonComplete = true;
-      } else {
+        this.deploymentToolRound = 0;
+        this.deploymentPlacements.clear();
+        this.deploymentRunSnapshot = null;
+        this.deploymentRunComplete = false;
         this.showDeploymentModal();
+      },
+    ).setVisible(false);
+
+    const narrationScripts = {
+      can: [
+        '船隻採樣一次可以調查同一地點三個深度，但每層只留低一個時刻嘅讀數，而且價錢最貴。',
+        '傳統固定探頭可以連續記錄一個點，但生物附著會令佢斷線，維修仲要用額外預算。',
+        '新一代溶解氧傳感器可以組成多點連續監測網，紫外光有助抑制附著，而且薄膜可以更換。',
+      ],
+      pth: [
+        '船只采样一次可以调查同一个地点的三个深度，但每层只留下一个时刻的读数，而且价格最贵。',
+        '传统固定探头可以连续记录一个点，但生物附着会让它断线，维修还要使用额外预算。',
+        '新一代溶解氧传感器可以组成多点连续监测网，紫外光有助于抑制附着，而且薄膜可以更换。',
+      ],
+      eng: [
+        'A vessel visit samples three depths at one location, but each depth gets only one moment, and this is the most expensive method.',
+        'A conventional fixed probe records one point continuously, but biofouling can break its link and repairs use more budget.',
+        'Next-generation dissolved oxygen sensors form a continuous multi-point network. Ultraviolet light helps suppress fouling, and the film is replaceable.',
+      ],
+    } as const;
+    const voiceLanguage = { can: 'zh-HK', pth: 'zh-CN', eng: 'en-US' } as const;
+    let narrationFallback: Phaser.Time.TimerEvent | null = null;
+    const runNarration = (index: number): void => {
+      if (this.modalRoot !== root) return;
+      if (index >= methodDefinitions.length) {
+        methodViews.forEach((view) => view.setAlpha(1));
+        narrationHighlight.setVisible(false);
+        narrationStatus.setText(i18n.t('lab.compareNarrationDone')).setColor('#91e6a7');
+        startButton.setVisible(true);
         return;
       }
-      renderStep();
+
+      methodViews.forEach((view, viewIndex) => {
+        view.setAlpha(viewIndex === index ? 1 : 0.42);
+      });
+      narrationHighlight.setPosition(methodDefinitions[index]?.x ?? 470, 590).setVisible(true);
+      this.tweens.add({
+        targets: narrationHighlight,
+        alpha: { from: 0.32, to: 1 },
+        duration: 520,
+        yoyo: true,
+        repeat: -1,
+      });
+      narrationStatus
+        .setText(i18n.t(methodDefinitions[index]?.narrationKey ?? 'lab.compareManualNarration'))
+        .setColor('#fff3a8');
+
+      let finished = false;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        this.activeNarrationUtterance = null;
+        narrationFallback?.remove(false);
+        narrationFallback = null;
+        this.tweens.killTweensOf(narrationHighlight);
+        runNarration(index + 1);
+      };
+      const speechAvailable = !(
+        typeof window === 'undefined' ||
+        window.speechSynthesis === undefined ||
+        typeof SpeechSynthesisUtterance === 'undefined'
+      );
+      if (!speechAvailable) {
+        // Keep the visual teaching sequence usable in browsers without speech,
+        // but never use a timer while real narration is playing: doing so cut
+        // longer sentences short when the next utterance cancelled the first.
+        narrationFallback = this.time.delayedCall(5200, finish);
+        return;
+      }
+      const voice = experiencePreferences.getVoice();
+      const utterance = new SpeechSynthesisUtterance(narrationScripts[voice][index] ?? '');
+      this.activeNarrationUtterance = utterance;
+      utterance.lang = voiceLanguage[voice];
+      utterance.rate = 0.9;
+      utterance.onend = () => {
+        if (this.activeNarrationUtterance === utterance) finish();
+      };
+      utterance.onerror = () => {
+        if (this.activeNarrationUtterance === utterance) finish();
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    };
+    const narrationStart = this.time.delayedCall(320, () => runNarration(0));
+    root.once('destroy', () => {
+      narrationStart.remove(false);
+      narrationFallback?.remove(false);
+      this.tweens.killTweensOf(narrationHighlight);
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      this.activeNarrationUtterance = null;
     });
-    renderStep();
   }
 
   private showDeploymentModal(): void {
@@ -1307,11 +1708,16 @@ export class Chapter2LabScene extends Phaser.Scene {
       ['vessel-sampling', 'fixed-probe', 'sensing-film-node'].includes(sensor.id),
     );
     if (availableSensors.length === 0) return;
+    const sensorName = (sensor: Sensor): string =>
+      i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh;
+    const expectedSensor =
+      availableSensors[Math.min(this.deploymentToolRound, availableSensors.length - 1)] ??
+      availableSensors[0]!;
 
     let selectedSensor: Sensor | null = null;
     const totalBudget = DEMO_DEPLOYMENT_SCENARIO.budget;
     let simulationTween: Phaser.Tweens.Tween | null = null;
-    let summaryButton: Phaser.GameObjects.Container | null = null;
+    let resultButton: Phaser.GameObjects.Container | null = null;
     let successCelebrationPlayed = false;
     let simulationRunning = false;
     const placements = new Map<number, Sensor>();
@@ -1325,10 +1731,8 @@ export class Chapter2LabScene extends Phaser.Scene {
       glyph: Phaser.GameObjects.Graphics;
     }> = [];
     const goalDefinitions = [
-      { key: 'continuousRecording' as const, label: 'lab.goalContinuous' },
-      { key: 'allLocationsCovered' as const, label: 'lab.goalLocations' },
-      { key: 'multipleDepthsCovered' as const, label: 'lab.goalDepths' },
-      { key: 'eventDetected' as const, label: 'lab.goalEvent' },
+      { key: 'allPointsCovered' as const, label: 'lab.goalAllPoints' },
+      { key: 'completeDataAtAllPoints' as const, label: 'lab.goalCompleteData' },
       { key: 'withinBudget' as const, label: 'lab.goalBudget' },
     ];
     const points: Array<{
@@ -1337,33 +1741,60 @@ export class Chapter2LabScene extends Phaser.Scene {
       heat: Phaser.GameObjects.Arc;
       glyph: Phaser.GameObjects.Graphics;
       value: Phaser.GameObjects.Text;
+      wrench: Phaser.GameObjects.Text;
     }> = [];
 
-    const equipmentTitle = this.add.text(120, 350, i18n.t('lab.equipment'), {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: Palette.accentText,
-      fontStyle: 'bold',
-    });
-    const deploymentTitle = this.add.text(770, 350, i18n.t('lab.deployment'), {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: Palette.accentText,
-      fontStyle: 'bold',
-    });
-    const budgetText = this.add
-      .text(680, 350, '', {
+    const isEnglish = i18n.getLocale() === 'en';
+    const equipmentTitle = this.add
+      .text(170, 318, i18n.t('lab.equipment'), {
         fontFamily: 'monospace',
-        fontSize: '18px',
+        fontSize: isEnglish ? '22px' : '25px',
+        color: Palette.accentText,
+        fontStyle: 'bold',
+        wordWrap: { width: 290, useAdvancedWrap: true },
+      })
+      .setOrigin(0, 0.5);
+    const deploymentTitle = this.add.text(790, 316, i18n.t('lab.deployment'), {
+      fontFamily: 'monospace',
+      fontSize: '25px',
+      color: Palette.accentText,
+      fontStyle: 'bold',
+    });
+    const budgetPill = this.add
+      .rectangle(600, 318, 270, 48, 0x3b3217, 0.94)
+      .setStrokeStyle(2, Palette.gold, 0.64);
+    const budgetText = this.add
+      .text(600, 318, '', {
+        fontFamily: 'monospace',
+        fontSize: '21px',
         color: '#f0c95a',
         fontStyle: 'bold',
-        align: 'right',
+        align: 'center',
       })
-      .setOrigin(1, 0);
+      .setOrigin(0.5);
+    const showBudgetAlarm = (shortfall: number): void => {
+      this.playBudgetAlarm();
+      budgetPill.setFillStyle(0x6a2227, 1).setStrokeStyle(3, Palette.danger, 1);
+      budgetText.setColor('#fff3ef');
+      selectedText
+        .setText(this.format('lab.budgetAlarm', { amount: `$${shortfall}` }))
+        .setColor('#ffb09d');
+      this.tweens.add({
+        targets: [budgetPill, budgetText],
+        scale: 1.06,
+        duration: 90,
+        yoyo: true,
+        repeat: 2,
+      });
+      this.time.delayedCall(780, () => {
+        budgetPill.setFillStyle(0x3b3217, 0.94).setStrokeStyle(2, Palette.gold, 0.64);
+        budgetText.setColor('#f0c95a');
+      });
+    };
     const timeText = this.add
-      .text(1770, 350, this.format('lab.simTime', { hour: '00:00' }), {
+      .text(1770, 316, this.format('lab.simTime', { hour: '00:00' }), {
         fontFamily: 'monospace',
-        fontSize: '18px',
+        fontSize: '20px',
         color: '#8debe3',
         fontStyle: 'bold',
       })
@@ -1371,37 +1802,117 @@ export class Chapter2LabScene extends Phaser.Scene {
     const selectedText = this.add
       .text(1265, 850, '', {
         fontFamily: 'sans-serif',
-        fontSize: '19px',
+        fontSize: '21px',
         color: '#d6f4f5',
         align: 'center',
         wordWrap: { width: 980, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
-    root.add([equipmentTitle, deploymentTitle, budgetText, timeText, selectedText]);
+    const trialText = this.add
+      .text(
+        1290,
+        354,
+        this.format('lab.trialRound', {
+          round: String(this.deploymentToolRound + 1),
+          name: sensorName(expectedSensor),
+        }),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '20px',
+          color: '#fff3a8',
+          fontStyle: 'bold',
+          align: 'center',
+          wordWrap: { width: 560, useAdvancedWrap: true },
+        },
+      )
+      .setOrigin(0.5);
+    root.add([
+      equipmentTitle,
+      deploymentTitle,
+      trialText,
+      budgetPill,
+      budgetText,
+      timeText,
+      selectedText,
+    ]);
 
-    const goalsSurface = createResearchSurface(this, 390, 805, 540, 172, {
+    const goalsSurface = createResearchSurface(this, 450, 816, 580, 132, {
       fill: Palette.cardSoft,
       border: Palette.accent,
       borderAlpha: 0.34,
       radius: 18,
       shadow: false,
     });
-    const goalsTitle = this.add.text(145, 728, i18n.t('lab.goalTitle'), {
+    const goalsTitle = this.add.text(170, 758, i18n.t('lab.goalTitle'), {
       fontFamily: 'monospace',
-      fontSize: '17px',
+      fontSize: '23px',
       color: '#f0c95a',
       fontStyle: 'bold',
     });
     const goalRows = goalDefinitions.map((goal, index) => {
-      const row = this.add.text(150, 758 + index * 26, '', {
+      const row = this.add.text(175, 789 + index * 31, '', {
         fontFamily: 'sans-serif',
-        fontSize: '17px',
+        fontSize: '22px',
         color: '#789aa8',
         fontStyle: 'bold',
       });
       return { ...goal, row };
     });
     root.add([goalsSurface, goalsTitle, ...goalRows.map(({ row }) => row)]);
+
+    const equipmentGuide = this.add
+      .rectangle(318, 318, 292, 58, 0x3fd0c9, 0.025)
+      .setStrokeStyle(4, Palette.accent, 0.95);
+    const goalGuide = this.add
+      .rectangle(450, 816, 598, 142, 0xf0c95a, 0.025)
+      .setStrokeStyle(4, Palette.gold, 0.95);
+    const stepTwoGuide = this.add
+      .rectangle(965, 328, 400, 58, 0x3fd0c9, 0.025)
+      .setStrokeStyle(4, Palette.accent, 0.95)
+      .setVisible(false);
+    root.add([equipmentGuide, goalGuide, stepTwoGuide]);
+    const pulseGuide = (target: Phaser.GameObjects.Rectangle): void => {
+      target.setVisible(true).setAlpha(1);
+      this.tweens.killTweensOf(target);
+      this.tweens.add({
+        targets: target,
+        alpha: { from: 0.28, to: 1 },
+        scale: { from: 0.985, to: 1.025 },
+        duration: 520,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    };
+    const stopGuide = (target: Phaser.GameObjects.Rectangle): void => {
+      this.tweens.killTweensOf(target);
+      target.setVisible(false).setScale(1).setAlpha(1);
+    };
+    const pulseText = (target: Phaser.GameObjects.Text): void => {
+      target.setAlpha(1);
+      this.tweens.killTweensOf(target);
+      this.tweens.add({
+        targets: target,
+        alpha: { from: 0.38, to: 1 },
+        duration: 520,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    };
+    pulseGuide(goalGuide);
+    pulseGuide(equipmentGuide);
+    pulseText(equipmentTitle);
+    pulseText(goalsTitle);
+    const introGuideTimer = this.time.delayedCall(6000, () => {
+      stopGuide(goalGuide);
+      stopGuide(equipmentGuide);
+      this.tweens.killTweensOf(equipmentTitle);
+      this.tweens.killTweensOf(goalsTitle);
+      equipmentTitle.setAlpha(1);
+      goalsTitle.setAlpha(1);
+    });
+    let stepTwoTimer: Phaser.Time.TimerEvent | null = null;
 
     const ocean = this.add.graphics();
     ocean.fillGradientStyle(0x0e6683, 0x0e6683, 0x08283c, 0x08283c, 0.92, 0.92, 0.98, 0.98);
@@ -1461,7 +1972,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       const header = this.add
         .text(x, 412, i18n.t(key), {
           fontFamily: 'sans-serif',
-          fontSize: '18px',
+          fontSize: '20px',
           color: '#e1fbff',
           fontStyle: 'bold',
           align: 'center',
@@ -1475,7 +1986,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       const label = this.add
         .text(790, y, i18n.t(key), {
           fontFamily: 'monospace',
-          fontSize: '18px',
+          fontSize: '19px',
           color: '#9bc3ce',
           align: 'left',
         })
@@ -1497,7 +2008,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         const value = this.add
           .text(x, y + 43, '', {
             fontFamily: 'monospace',
-            fontSize: '18px',
+            fontSize: '19px',
             color: '#d8f7f5',
             backgroundColor: '#061923aa',
             padding: { x: 5, y: 2 },
@@ -1505,29 +2016,33 @@ export class Chapter2LabScene extends Phaser.Scene {
           .setOrigin(0.5)
           .setDepth(207)
           .setVisible(false);
-        points.push({ point, ring, heat, glyph, value });
-        root.add([heat, ring, point, glyph, value]);
+        const wrench = this.add
+          .text(x + 31, y - 35, '🔧', { fontFamily: 'sans-serif', fontSize: '26px' })
+          .setOrigin(0.5)
+          .setDepth(208)
+          .setVisible(false);
+        points.push({ point, ring, heat, glyph, value, wrench });
+        root.add([heat, ring, point, glyph, value, wrench]);
         point.on(Phaser.Input.Events.POINTER_UP, () => {
           if (simulationRunning) return;
           if (placements.has(index)) {
-            placements.delete(index);
-            this.deploymentPlacements.delete(index);
+            const placedSensor = placements.get(index);
+            const affectedIndexes =
+              placedSensor?.id === 'vessel-sampling' ? [column, column + 3, column + 6] : [index];
+            affectedIndexes.forEach((affectedIndex) => {
+              placements.delete(affectedIndex);
+              this.deploymentPlacements.delete(affectedIndex);
+            });
             this.deploymentRunComplete = false;
-            this.deploymentDetectedEvent = false;
-            summaryButton?.setVisible(false);
+            this.deploymentRunSnapshot = null;
+            this.repairedDeploymentCells.clear();
+            this.deploymentRepairSpend = 0;
+            resultButton?.setVisible(false);
             render();
             return;
           }
           if (selectedSensor === null) {
             selectedText.setText(i18n.t('lab.selectDeviceFirst')).setColor('#ffcf78');
-            return;
-          }
-          const usedBudget = [...placements.values()].reduce(
-            (sum, sensor) => sum + deploymentCost(sensor),
-            0,
-          );
-          if (usedBudget + deploymentCost(selectedSensor) > totalBudget) {
-            selectedText.setText(i18n.t('lab.insufficientBudget')).setColor('#ff9c86');
             return;
           }
           const targetDepth = depthValues[row];
@@ -1537,61 +2052,82 @@ export class Chapter2LabScene extends Phaser.Scene {
               .setColor('#ffcf78');
             return;
           }
-          placements.set(index, selectedSensor);
-          this.deploymentPlacements.set(index, selectedSensor.id);
+          const nextPlacements = new Map(placements);
+          const sensorToPlace = selectedSensor;
+          const affectedIndexes =
+            sensorToPlace.id === 'vessel-sampling' ? [column, column + 3, column + 6] : [index];
+          affectedIndexes.forEach((affectedIndex) =>
+            nextPlacements.set(affectedIndex, sensorToPlace),
+          );
+          const projectedDeployment = [...nextPlacements.entries()].flatMap(
+            ([gridIndex, sensor]) => {
+              const placement = gridPlacement(gridIndex, sensor);
+              return placement === null ? [] : [placement];
+            },
+          );
+          const projectedCost = totalDeploymentCost(projectedDeployment);
+          if (projectedCost > totalBudget) showBudgetAlarm(projectedCost - totalBudget);
+          placements.clear();
+          nextPlacements.forEach((sensor, gridIndex) => placements.set(gridIndex, sensor));
+          this.deploymentPlacements.clear();
+          placements.forEach((sensor, gridIndex) =>
+            this.deploymentPlacements.set(gridIndex, sensor.id),
+          );
           this.deploymentRunComplete = false;
-          this.deploymentDetectedEvent = false;
-          summaryButton?.setVisible(false);
+          this.deploymentRunSnapshot = null;
+          this.repairedDeploymentCells.clear();
+          this.deploymentRepairSpend = 0;
+          resultButton?.setVisible(false);
+          stopGuide(stepTwoGuide);
+          stepTwoTimer?.remove(false);
           render();
         });
       });
     });
 
-    const sensorName = (sensor: Sensor): string =>
-      i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh;
-    const depthLabel = (depth: DepthZone): string => {
-      const keyByDepth: Record<DepthZone, string> = {
-        surface: 'lab.depthSurface',
-        mid: 'lab.depthMid',
-        bottom: 'lab.depthBottom',
-      };
-      return i18n.t(keyByDepth[depth] ?? 'lab.depthBottom');
-    };
     availableSensors.forEach((sensor, index) => {
-      const x = 390;
-      const y = 410 + index * 110;
+      const x = 450;
+      const y = 412 + index * 128;
       const panel = this.add
-        .rectangle(x, y, 540, 92, 0x0a2c3b, 0.94)
+        .rectangle(x, y, 580, 118, 0x0a2c3b, 0.94)
         .setStrokeStyle(2, 0x507b89, 0.62)
         .setInteractive({ useHandCursor: true });
-      const glyph = this.add.graphics().setPosition(x - 220, y);
-      this.drawDeviceGlyph(glyph, sensor, 0.78, 0x9bded8);
-      const title = this.add.text(x - 165, y - 31, sensorName(sensor), {
+      const glyph = this.add.graphics().setPosition(x - 238, y);
+      this.drawDeviceGlyph(glyph, sensor, 0.96, 0x9bded8);
+      const title = this.add.text(x - 175, y - 43, sensorName(sensor), {
         fontFamily: 'sans-serif',
-        fontSize: '19px',
+        fontSize: isEnglish ? '24px' : '26px',
         color: Palette.textLight,
         fontStyle: 'bold',
-        wordWrap: { width: 350, useAdvancedWrap: true },
+        wordWrap: { width: 405, useAdvancedWrap: true },
       });
-      const mode = i18n.t(sensor.continuous ? 'lab.deviceContinuous' : 'lab.deviceSingle');
-      const detail = sensor.continuous
-        ? this.format('lab.deviceEvery', { minutes: String(sensor.samplingIntervalMinutes) })
-        : '';
-      const maximumDepth = this.format('lab.deviceMaxDepth', {
-        depth: depthLabel(sensor.maxDepthZone),
-      });
+      const ruleKey =
+        sensor.id === 'vessel-sampling'
+          ? 'lab.deviceVesselRule'
+          : sensor.id === 'fixed-probe'
+            ? 'lab.deviceFixedRule'
+            : 'lab.deviceFilmRule';
       const values = this.add.text(
-        x - 165,
-        y + 4,
-        `$${deploymentCost(sensor)}  ·  ${mode}\n${detail === '' ? maximumDepth : `${detail}  ·  ${maximumDepth}`}`,
-        { fontFamily: 'monospace', fontSize: '14px', color: '#a9cbd4', lineSpacing: 4 },
+        x - 175,
+        y - 4,
+        this.format(ruleKey, {
+          price: `$${deploymentCost(sensor)}`,
+          repair: `$${repairCost(sensor)}`,
+        }),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: isEnglish ? '21px' : '23px',
+          color: '#c5e0e6',
+          lineSpacing: 5,
+          wordWrap: { width: 405, useAdvancedWrap: true },
+        },
       );
       const badge =
         sensor.id === 'sensing-film-node'
           ? this.add
-              .text(x + 252, y - 37, i18n.t('lab.newPart'), {
+              .text(x + 272, y - 48, i18n.t('lab.newPart'), {
                 fontFamily: 'monospace',
-                fontSize: '11px',
+                fontSize: '18px',
                 color: '#09231f',
                 backgroundColor: '#7ce2a0',
                 padding: { x: 5, y: 3 },
@@ -1603,7 +2139,35 @@ export class Chapter2LabScene extends Phaser.Scene {
       if (badge !== null) root.add(badge);
       panel.on(Phaser.Input.Events.POINTER_UP, () => {
         if (simulationRunning) return;
+        if (sensor.id !== expectedSensor.id) {
+          selectedText
+            .setText(
+              this.format('lab.trialLocked', {
+                name: sensorName(expectedSensor),
+              }),
+            )
+            .setColor('#ffcf78');
+          return;
+        }
+        if (selectedSensor?.id !== sensor.id) {
+          placements.clear();
+          this.deploymentPlacements.clear();
+          this.deploymentRunComplete = false;
+          this.deploymentRunSnapshot = null;
+          this.repairedDeploymentCells.clear();
+          this.deploymentRepairSpend = 0;
+          resultButton?.setVisible(false);
+        }
         selectedSensor = sensor;
+        stopGuide(goalGuide);
+        stopGuide(equipmentGuide);
+        this.tweens.killTweensOf(equipmentTitle);
+        this.tweens.killTweensOf(goalsTitle);
+        equipmentTitle.setAlpha(1);
+        goalsTitle.setAlpha(1);
+        pulseGuide(stepTwoGuide);
+        stepTwoTimer?.remove(false);
+        stepTwoTimer = this.time.delayedCall(5000, () => stopGuide(stepTwoGuide));
         render();
       });
     });
@@ -1611,7 +2175,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const hint = this.add
       .text(960, 982, i18n.t('lab.previewHint'), {
         fontFamily: 'sans-serif',
-        fontSize: '15px',
+        fontSize: '17px',
         color: '#789aa8',
         align: 'center',
         wordWrap: { width: 1380, useAdvancedWrap: true },
@@ -1634,11 +2198,20 @@ export class Chapter2LabScene extends Phaser.Scene {
       timeText.setText(
         this.format('lab.simTime', { hour: `${String(Math.floor(hour)).padStart(2, '0')}:00` }),
       );
-      points.forEach(({ heat, value }, index) => {
+      points.forEach(({ heat, value, wrench }, index) => {
         const sensor = placements.get(index);
+        wrench.setVisible(false);
         if (sensor === undefined) {
           heat.setFillStyle(0x6e8690, 0.05);
           value.setText('?').setColor('#718a94').setVisible(true);
+          return;
+        }
+        const signalInterrupted =
+          providesContinuousCoverage(sensor) && !demoSensorHasSignalAtHour(sensor, hour);
+        if (signalInterrupted) {
+          heat.setAlpha(1).setFillStyle(Palette.gold, 0.18);
+          value.setText(i18n.t('lab.simSignalGap')).setColor('#ffd873').setVisible(true);
+          wrench.setVisible(true);
           return;
         }
         const hasReadingNow = providesContinuousCoverage(sensor) || Math.abs(hour - 14) <= 0.7;
@@ -1662,13 +2235,14 @@ export class Chapter2LabScene extends Phaser.Scene {
       });
     };
 
-    const evaluateCurrentDeployment = (): DeploymentEvaluation => {
-      const deployed = [...placements.entries()].flatMap(([index, sensor]) => {
+    const currentDeployment = () =>
+      [...placements.entries()].flatMap(([index, sensor]) => {
         const placement = gridPlacement(index, sensor);
         return placement === null ? [] : [placement];
       });
-      return evaluateDeployment(deployed, DEMO_DEPLOYMENT_SCENARIO);
-    };
+
+    const evaluateCurrentDeployment = (): DeploymentEvaluation =>
+      evaluateDeployment(currentDeployment(), DEMO_DEPLOYMENT_SCENARIO);
 
     const playSuccessCelebration = (): void => {
       if (successCelebrationPlayed) return;
@@ -1728,6 +2302,8 @@ export class Chapter2LabScene extends Phaser.Scene {
       }
       simulationTween?.stop();
       simulationRunning = true;
+      this.repairedDeploymentCells.clear();
+      this.deploymentRepairSpend = 0;
       runButton.setAlpha(0.52);
       selectedText.setText(i18n.t('lab.simRunning')).setColor('#8debe3');
       simulationTween = this.tweens.addCounter({
@@ -1739,16 +2315,21 @@ export class Chapter2LabScene extends Phaser.Scene {
         onComplete: () => {
           updateSimulationVisual(5);
           timeText.setText(i18n.t('lab.simSummaryTime'));
-          const evaluation = evaluateCurrentDeployment();
+          const snapshot = createDeploymentRunSnapshot(
+            currentDeployment(),
+            DEMO_DEPLOYMENT_SCENARIO,
+          );
+          const evaluation = snapshot.evaluation;
           this.deploymentRunComplete = true;
-          this.deploymentDetectedEvent = evaluation.success;
+          this.deploymentRunSnapshot = snapshot;
           if (evaluation.success) this.consoleVisited = true;
           this.refreshZoneStates();
           simulationRunning = false;
           render();
           if (evaluation.success) playSuccessCelebration();
           runButton.setAlpha(1);
-          summaryButton?.setVisible(evaluation.success);
+          resultButton?.setVisible(true);
+          this.time.delayedCall(420, () => this.showDeploymentResultModal());
         },
       });
     };
@@ -1761,55 +2342,78 @@ export class Chapter2LabScene extends Phaser.Scene {
       true,
       runSimulation,
     );
-    summaryButton = this.addModalButton(root, 1020, 930, 300, i18n.t('lab.viewSummary'), true, () =>
-      this.showLearningSummary(),
-    ).setVisible(this.deploymentDetectedEvent);
+    resultButton = this.addModalButton(
+      root,
+      1020,
+      930,
+      340,
+      i18n.t('lab.viewDeploymentResult'),
+      true,
+      () => this.showDeploymentResultModal(),
+    ).setVisible(this.deploymentRunSnapshot !== null);
 
     const render = (): void => {
       const evaluation = evaluateCurrentDeployment();
-      budgetText.setText(
-        `${i18n.t('lab.budget')}  $${evaluation.remainingBudget} / $${totalBudget}`,
-      );
+      const remainingAfterRepairs = evaluation.remainingBudget - this.deploymentRepairSpend;
+      budgetText.setText(`${i18n.t('lab.budget')}  $${remainingAfterRepairs} / $${totalBudget}`);
+      budgetText.setColor(remainingAfterRepairs < 0 ? '#ff9c86' : '#f0c95a');
 
       if (this.deploymentRunComplete) {
         const missingGoals = goalRows
-          .filter(({ key }) => !evaluation.goals[key])
+          .filter(({ key }) =>
+            key === 'withinBudget' ? remainingAfterRepairs < 0 : !evaluation.goals[key],
+          )
           .map(({ label }) => i18n.t(label));
+        const effectiveSuccess = evaluation.success && remainingAfterRepairs >= 0;
         selectedText
           .setText(
-            evaluation.success
+            effectiveSuccess
               ? i18n.t('lab.simDetected')
               : this.format('lab.goalsMissingPrefix', { goals: missingGoals.join(' · ') }),
           )
-          .setColor(evaluation.success ? '#91e6a7' : '#ffcf78');
+          .setColor(effectiveSuccess ? '#91e6a7' : '#ffcf78');
       } else if (selectedSensor === null) {
         selectedText.setText(i18n.t('lab.selectDeviceFirst')).setColor('#d6f4f5');
       } else {
         selectedText
           .setText(
-            this.format('lab.placeDeviceNext', {
-              name: sensorName(selectedSensor),
-            }),
+            this.format(
+              selectedSensor.id === 'vessel-sampling'
+                ? 'lab.placeVesselNext'
+                : 'lab.placeDeviceNext',
+              {
+                name: sensorName(selectedSensor),
+              },
+            ),
           )
           .setColor('#d6f4f5');
       }
 
       goalRows.forEach(({ key, label, row }) => {
-        const pending = key === 'eventDetected' && !this.deploymentRunComplete;
+        const pending = key === 'completeDataAtAllPoints' && !this.deploymentRunComplete;
         const waitingForFirstPlacement = key === 'withinBudget' && placements.size === 0;
-        const complete = !pending && !waitingForFirstPlacement && evaluation.goals[key];
+        const goalComplete =
+          key === 'withinBudget' ? remainingAfterRepairs >= 0 : evaluation.goals[key];
+        const complete = !pending && !waitingForFirstPlacement && goalComplete;
         row
           .setText(`${pending ? '?' : complete ? '✓' : '○'}  ${i18n.t(label)}`)
           .setColor(pending ? '#f0c95a' : complete ? '#91e6a7' : '#789aa8');
       });
       equipmentCards.forEach(({ sensor, panel, glyph }) => {
         const selected = sensor.id === selectedSensor?.id;
+        const availableThisRound = sensor.id === expectedSensor.id;
         panel
           .setFillStyle(selected ? 0x124b50 : 0x0a2c3b, 0.98)
-          .setStrokeStyle(selected ? 3 : 2, selected ? 0x8ff0df : 0x507b89, selected ? 1 : 0.62);
-        this.drawDeviceGlyph(glyph, sensor, 0.78, selected ? 0xc8fff5 : 0x7ea5af);
+          .setStrokeStyle(
+            selected ? 3 : 2,
+            selected ? 0x8ff0df : availableThisRound ? 0xf0c95a : 0x507b89,
+            selected ? 1 : availableThisRound ? 0.9 : 0.32,
+          )
+          .setAlpha(availableThisRound ? 1 : 0.42);
+        glyph.setAlpha(availableThisRound ? 1 : 0.42);
+        this.drawDeviceGlyph(glyph, sensor, 0.96, selected ? 0xc8fff5 : 0x7ea5af);
       });
-      points.forEach(({ point, ring, heat, glyph, value }, index) => {
+      points.forEach(({ point, ring, heat, glyph, value, wrench }, index) => {
         const sensor = placements.get(index);
         glyph.clear();
         if (sensor === undefined) {
@@ -1835,6 +2439,7 @@ export class Chapter2LabScene extends Phaser.Scene {
             .lineBetween(0, -8, 0, 8);
           heat.setAlpha(0);
           value.setVisible(false);
+          wrench.setVisible(false);
         } else {
           point.setAlpha(1);
           ring.setAlpha(1);
@@ -1844,20 +2449,444 @@ export class Chapter2LabScene extends Phaser.Scene {
           if (!this.deploymentRunComplete) {
             heat.setAlpha(0);
             value.setVisible(false);
+            wrench.setVisible(false);
+          } else if (sensor.id === 'fixed-probe') {
+            wrench.setVisible(!this.repairedDeploymentCells.has(index));
           }
         }
       });
       runButton.setAlpha(placements.size > 0 ? 1 : 0.38);
-      summaryButton?.setVisible(this.deploymentDetectedEvent);
+      resultButton?.setVisible(this.deploymentRunSnapshot !== null);
       if (this.deploymentRunComplete) {
         updateSimulationVisual(5);
+        points.forEach(({ wrench }, index) => {
+          const sensor = placements.get(index);
+          wrench.setVisible(
+            sensor?.id === 'fixed-probe' && !this.repairedDeploymentCells.has(index),
+          );
+        });
         timeText.setText(i18n.t('lab.simSummaryTime'));
       } else if (!simulationRunning) {
         timeText.setText(this.format('lab.simTime', { hour: '00:00' }));
       }
     };
     render();
-    root.once('destroy', () => simulationTween?.stop());
+    root.once('destroy', () => {
+      simulationTween?.stop();
+      introGuideTimer.remove(false);
+      stepTwoTimer?.remove(false);
+      [equipmentGuide, goalGuide, stepTwoGuide].forEach((guide) => this.tweens.killTweensOf(guide));
+      this.tweens.killTweensOf(equipmentTitle);
+      this.tweens.killTweensOf(goalsTitle);
+    });
+  }
+
+  private showDeploymentResultModal(): void {
+    const snapshot = this.deploymentRunSnapshot;
+    const resultTitle =
+      snapshot === null
+        ? i18n.t('lab.deploymentResultNoRunTitle')
+        : snapshot.success
+          ? i18n.t('lab.deploymentResultSuccessTitle')
+          : snapshot.eventDetected
+            ? i18n.t('lab.deploymentResultDetectedTitle')
+            : i18n.t('lab.deploymentResultGapTitle');
+    const resultBody =
+      snapshot === null
+        ? i18n.t('lab.deploymentResultNoRunBody')
+        : snapshot.success
+          ? i18n.t('lab.deploymentResultSuccessBody')
+          : snapshot.eventDetected
+            ? i18n.t('lab.deploymentResultDetectedBody')
+            : i18n.t('lab.deploymentResultGapBody');
+    const root = this.createModal(
+      i18n.t('lab.deploymentResultEyebrow'),
+      resultTitle,
+      resultBody,
+      1720,
+      940,
+    );
+
+    const hasNextToolTrial = snapshot !== null && !snapshot.success && this.deploymentToolRound < 2;
+    this.addModalButton(
+      root,
+      500,
+      930,
+      hasNextToolTrial ? 390 : 300,
+      i18n.t(hasNextToolTrial ? 'lab.deploymentResultNextTrial' : 'lab.deploymentResultBack'),
+      false,
+      () => {
+        if (hasNextToolTrial) {
+          this.deploymentToolRound += 1;
+          this.deploymentPlacements.clear();
+          this.deploymentRunComplete = false;
+          this.deploymentRunSnapshot = null;
+          this.repairedDeploymentCells.clear();
+          this.deploymentRepairSpend = 0;
+        }
+        this.showDeploymentModal();
+      },
+    );
+
+    if (snapshot === null) {
+      const emptySurface = createResearchSurface(this, 960, 585, 1120, 360, {
+        fill: Palette.cardSoft,
+        border: 0x6f8d98,
+        borderAlpha: 0.42,
+        radius: 24,
+        shadow: false,
+      });
+      const emptyText = this.add
+        .text(960, 585, i18n.t('lab.deploymentResultNoRunBody'), {
+          fontFamily: 'sans-serif',
+          fontSize: '28px',
+          color: '#a9c8d3',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+      root.add([emptySurface, emptyText]);
+      return;
+    }
+
+    const resultCriteria = this.add
+      .text(960, 319, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#d8eef2',
+        fontStyle: 'bold',
+        align: 'center',
+        backgroundColor: '#0b3441dd',
+        padding: { x: 18, y: 8 },
+      })
+      .setOrigin(0.5);
+    root.add(resultCriteria);
+
+    const sensors = gameState.getData().sensors;
+    const siteKeys = ['lab.siteEntrance', 'lab.siteRaft', 'lab.siteInner'] as const;
+    const depthKeys: Record<DepthZone, string> = {
+      surface: 'lab.depthSurface',
+      mid: 'lab.depthMid',
+      bottom: 'lab.depthBottom',
+    };
+    const coverageSurface = createResearchSurface(this, 850, 580, 1170, 430, {
+      fill: Palette.cardSoft,
+      border: Palette.accent,
+      borderAlpha: 0.44,
+      radius: 24,
+      shadow: false,
+    });
+    const coverageTitle = this.add.text(300, 386, i18n.t('lab.resultCoverageTitle'), {
+      fontFamily: 'monospace',
+      fontSize: '28px',
+      color: '#f0c95a',
+      fontStyle: 'bold',
+      wordWrap: { width: 430, useAdvancedWrap: true },
+    });
+    const coverageHint = this.add
+      .text(1390, 390, i18n.t('lab.resultCoverageHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#a7cbd4',
+        align: 'right',
+        wordWrap: { width: 620, useAdvancedWrap: true },
+      })
+      .setOrigin(1, 0);
+    root.add([coverageSurface, coverageTitle, coverageHint]);
+
+    const cellXs = [630, 900, 1170] as const;
+    const cellYs = [500, 615, 730] as const;
+    siteKeys.forEach((key, column) => {
+      const x = cellXs[column];
+      if (x === undefined) return;
+      const label = this.add
+        .text(x, 432, i18n.t(key), {
+          fontFamily: 'sans-serif',
+          fontSize: '27px',
+          color: '#e5fbff',
+          fontStyle: 'bold',
+          align: 'center',
+          wordWrap: { width: 260, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      root.add(label);
+    });
+
+    const cellViews: Array<{
+      cell: DeploymentCellRecord;
+      panel: Phaser.GameObjects.Rectangle;
+      label: Phaser.GameObjects.Text;
+      border: number;
+    }> = [];
+    const cellLabelKey = (cell: DeploymentCellRecord): string => {
+      if (this.repairedDeploymentCells.has(cell.gridIndex)) {
+        return cell.lowOxygenDetected ? 'lab.resultCellRepairedLow' : 'lab.resultCellRepaired';
+      }
+      if (cell.signalGaps.length > 0) {
+        return cell.lowOxygenDetected ? 'lab.resultCellLowGap' : 'lab.resultCellGap';
+      }
+      if (cell.lowOxygenDetected) return 'lab.resultCellLow';
+      if (cell.mode === 'continuous') return 'lab.resultCellContinuous';
+      if (cell.mode === 'manual') return 'lab.resultCellManual';
+      return 'lab.resultCellNoData';
+    };
+    snapshot.cells.forEach((cell) => {
+      const column = cell.gridIndex % 3;
+      const row = Math.floor(cell.gridIndex / 3);
+      const x = cellXs[column];
+      const y = cellYs[row];
+      if (x === undefined || y === undefined) return;
+      if (column === 0) {
+        const depthLabel = this.add
+          .text(475, y, i18n.t(depthKeys[cell.depthZone]), {
+            fontFamily: 'sans-serif',
+            fontSize: '26px',
+            color: '#b8dbe2',
+            fontStyle: 'bold',
+            align: 'right',
+          })
+          .setOrigin(1, 0.5);
+        root.add(depthLabel);
+      }
+      const fill = cell.lowOxygenDetected
+        ? 0x592d32
+        : cell.signalGaps.length > 0
+          ? 0x413a22
+          : cell.mode === 'continuous'
+            ? 0x164840
+            : cell.mode === 'manual'
+              ? 0x4c3d1e
+              : 0x102b36;
+      const border = cell.lowOxygenDetected
+        ? Palette.danger
+        : cell.signalGaps.length > 0
+          ? Palette.gold
+          : cell.mode === 'continuous'
+            ? Palette.success
+            : cell.mode === 'manual'
+              ? Palette.gold
+              : 0x607c87;
+      const panel = this.add
+        .rectangle(x, y, 248, 102, fill, 0.98)
+        .setStrokeStyle(3, border, 0.78)
+        .setInteractive({ useHandCursor: true });
+      const label = this.add
+        .text(x, y, i18n.t(cellLabelKey(cell)), {
+          fontFamily: 'sans-serif',
+          fontSize: i18n.getLocale() === 'en' ? '18px' : '22px',
+          color: cell.mode === 'unmonitored' ? '#7f9ba5' : '#f0fffc',
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 5,
+          wordWrap: { width: 228, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      cellViews.push({ cell, panel, label, border });
+      root.add([panel, label]);
+    });
+
+    const detailSurface = createResearchSurface(this, 850, 848, 1080, 76, {
+      fill: Palette.cardSoft,
+      border: Palette.accent,
+      borderAlpha: 0.34,
+      radius: 18,
+      shadow: false,
+    });
+    const selectedDevice = this.add
+      .text(850, 829, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#e5f8fa',
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 1000, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    const cellExplanation = this.add
+      .text(850, 864, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '21px',
+        color: '#cbe7eb',
+        align: 'center',
+        lineSpacing: 4,
+        wordWrap: { width: 1000, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    root.add([detailSurface, selectedDevice, cellExplanation]);
+
+    const sidebarSurface = createResearchSurface(this, 1600, 630, 320, 330, {
+      fill: Palette.cardSoft,
+      border: snapshot.success ? Palette.success : Palette.gold,
+      borderAlpha: 0.56,
+      radius: 22,
+      shadow: false,
+    });
+    const sidebarTitle = this.add
+      .text(
+        1600,
+        490,
+        i18n.t(snapshot.success ? 'lab.resultAdvantageTitle' : 'lab.resultReviewTitle'),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '25px',
+          color: snapshot.success ? '#91e6a7' : '#f0c95a',
+          fontStyle: 'bold',
+          align: 'center',
+        },
+      )
+      .setOrigin(0.5);
+    const sidebarBody = this.add
+      .text(
+        1600,
+        545,
+        i18n.t(snapshot.success ? 'lab.resultAdvantageBody' : 'lab.resultFailureAction'),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '21px',
+          color: '#d7edf1',
+          align: 'left',
+          lineSpacing: 14,
+          wordWrap: { width: 270, useAdvancedWrap: true },
+        },
+      )
+      .setOrigin(0.5, 0);
+    root.add([sidebarSurface, sidebarTitle, sidebarBody]);
+
+    let activeCell: DeploymentCellRecord | null = null;
+    const repairButton = new ResearchButton(
+      this,
+      1600,
+      842,
+      300,
+      72,
+      this.format('lab.repairProbe', { cost: '$0' }),
+      { tone: 'secondary', fontSize: 22 },
+    );
+    repairButton.root.setVisible(false);
+    root.add(repairButton.root);
+
+    const refreshResultCriteria = (): void => {
+      const remaining =
+        DEMO_DEPLOYMENT_SCENARIO.budget -
+        snapshot.evaluation.totalCost -
+        this.deploymentRepairSpend;
+      resultCriteria
+        .setText(
+          this.format('lab.resultCriteria', {
+            covered: String(snapshot.evaluation.coveredPointCount),
+            complete: String(snapshot.evaluation.completePointCount),
+            budget: `$${remaining}`,
+          }),
+        )
+        .setColor(remaining < 0 ? '#ff9c86' : '#d8eef2');
+    };
+    refreshResultCriteria();
+
+    repairButton.onPress(() => {
+      if (activeCell === null || activeCell.sensorId !== 'fixed-probe') return;
+      if (this.repairedDeploymentCells.has(activeCell.gridIndex)) return;
+      const sensor = sensors.find((candidate) => candidate.id === activeCell?.sensorId);
+      if (sensor === undefined) return;
+      const cost = repairCost(sensor);
+      this.repairedDeploymentCells.add(activeCell.gridIndex);
+      this.deploymentRepairSpend += cost;
+      const cellView = cellViews.find(({ cell }) => cell.gridIndex === activeCell?.gridIndex);
+      cellView?.label.setText(
+        i18n.t(
+          activeCell.lowOxygenDetected ? 'lab.resultCellRepairedLow' : 'lab.resultCellRepaired',
+        ),
+      );
+      repairButton.root.setVisible(false);
+      cellExplanation.setText(i18n.t('lab.resultRepairCompleted'));
+      refreshResultCriteria();
+      if (
+        snapshot.evaluation.totalCost + this.deploymentRepairSpend >
+        DEMO_DEPLOYMENT_SCENARIO.budget
+      ) {
+        this.playBudgetAlarm();
+      }
+    });
+
+    const siteLabelForCell = (cell: DeploymentCellRecord): string => {
+      const column = cell.gridIndex % 3;
+      const key = siteKeys[column];
+      return key === undefined ? cell.locationId : i18n.t(key);
+    };
+    const renderCell = (cell: DeploymentCellRecord): void => {
+      activeCell = cell;
+      cellViews.forEach(({ cell: candidate, panel, border }) => {
+        const selected = candidate.gridIndex === cell.gridIndex;
+        panel.setStrokeStyle(selected ? 4 : 2, selected ? 0xffd75d : border, selected ? 1 : 0.7);
+      });
+
+      const site = siteLabelForCell(cell);
+      const depth = i18n.t(depthKeys[cell.depthZone]);
+      const sensor =
+        cell.sensorId === null
+          ? null
+          : (sensors.find((candidate) => candidate.id === cell.sensorId) ?? null);
+      selectedDevice.setText(
+        sensor === null
+          ? `${site} · ${depth}`
+          : `${site} · ${depth}  |  ${i18n.getLocale() === 'en' ? sensor.nameEn : sensor.nameZh}`,
+      );
+
+      if (cell.mode === 'manual') {
+        repairButton.root.setVisible(false);
+        cellExplanation.setText(i18n.t('lab.resultManual'));
+      } else if (cell.mode === 'continuous') {
+        const needsRepair =
+          cell.sensorId === 'fixed-probe' &&
+          cell.signalGaps.length > 0 &&
+          !this.repairedDeploymentCells.has(cell.gridIndex);
+        repairButton.root.setVisible(needsRepair);
+        if (needsRepair && sensor !== null) {
+          repairButton.setText(this.format('lab.repairProbe', { cost: `$${repairCost(sensor)}` }));
+        }
+        cellExplanation.setText(
+          i18n.t(
+            this.repairedDeploymentCells.has(cell.gridIndex)
+              ? 'lab.resultRepairCompleted'
+              : cell.signalGaps.length > 0
+                ? cell.lowOxygenDetected
+                  ? 'lab.resultDetectedWithGap'
+                  : 'lab.resultFixedGap'
+                : cell.lowOxygenDetected
+                  ? 'lab.resultDetected'
+                  : 'lab.resultContinuous',
+          ),
+        );
+      } else {
+        repairButton.root.setVisible(false);
+        cellExplanation.setText(
+          i18n.t(
+            cell.depthZone === 'bottom' && cell.mode === 'unmonitored'
+              ? 'lab.resultNearBedGap'
+              : 'lab.resultNoData',
+          ),
+        );
+      }
+    };
+
+    cellViews.forEach(({ cell, panel }) => {
+      panel.on(Phaser.Input.Events.POINTER_UP, () => renderCell(cell));
+    });
+    const eventCell = snapshot.cells.find(
+      (cell) =>
+        cell.locationId === DEMO_DEPLOYMENT_SCENARIO.eventPoint.locationId &&
+        cell.depthZone === DEMO_DEPLOYMENT_SCENARIO.eventPoint.depthZone,
+    );
+    const initialCell =
+      snapshot.cells.find((cell) => cell.lowOxygenDetected) ??
+      snapshot.cells.find((cell) => cell.mode === 'continuous' || cell.mode === 'manual') ??
+      eventCell ??
+      snapshot.cells[0];
+    if (initialCell !== undefined) renderCell(initialCell);
+
+    if (snapshot.success) {
+      this.addModalButton(root, 1420, 930, 390, i18n.t('lab.deploymentResultContinue'), true, () =>
+        this.showLearningSummary(),
+      );
+    }
   }
 
   private showLearningSummary(): void {
@@ -1865,8 +2894,8 @@ export class Chapter2LabScene extends Phaser.Scene {
       i18n.t('lab.summaryEyebrow'),
       i18n.t('lab.summaryTitle'),
       i18n.t('lab.summaryBody'),
-      1580,
-      900,
+      1720,
+      940,
     );
     const themes = [
       {
@@ -1888,9 +2917,10 @@ export class Chapter2LabScene extends Phaser.Scene {
         color: 0x91e6a7,
       },
     ] as const;
+    const themeViews: Phaser.GameObjects.Container[] = [];
     themes.forEach((theme, index) => {
       const x = 490 + index * 470;
-      const card = createResearchSurface(this, x, 565, 420, 320, {
+      const card = createResearchSurface(this, x, 470, 420, 260, {
         fill: Palette.cardSoft,
         border: theme.color,
         borderAlpha: 0.62,
@@ -1898,54 +2928,244 @@ export class Chapter2LabScene extends Phaser.Scene {
         shadow: false,
       });
       const markBubble = this.add
-        .circle(x, 475, 42, theme.color, 0.16)
+        .circle(x, 395, 32, theme.color, 0.16)
         .setStrokeStyle(2, theme.color, 0.72);
       const mark = this.add
-        .text(x, 475, theme.mark, {
+        .text(x, 395, theme.mark, {
           fontFamily: 'monospace',
-          fontSize: theme.mark === '24h' ? '20px' : '25px',
+          fontSize: theme.mark === '24h' ? '18px' : '23px',
           color: `#${theme.color.toString(16).padStart(6, '0')}`,
           fontStyle: 'bold',
         })
         .setOrigin(0.5);
       const title = this.add
-        .text(x, 555, i18n.t(theme.title), {
+        .text(x, 452, i18n.t(theme.title), {
           fontFamily: 'sans-serif',
-          fontSize: '27px',
+          fontSize: '25px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',
         })
         .setOrigin(0.5);
       const body = this.add
-        .text(x, 615, i18n.t(theme.body), {
+        .text(x, 488, i18n.t(theme.body), {
           fontFamily: 'sans-serif',
-          fontSize: '20px',
-          color: '#b8d3db',
+          fontSize: i18n.getLocale() === 'en' ? '20px' : '22px',
+          color: '#cce3e8',
+          fontStyle: 'bold',
           align: 'center',
-          lineSpacing: 7,
-          wordWrap: { width: 350, useAdvancedWrap: true },
+          lineSpacing: 6,
+          wordWrap: { width: 380, useAdvancedWrap: true },
         })
         .setOrigin(0.5, 0);
-      root.add([card, markBubble, mark, title, body]);
+      const themeView = this.add.container(0, 0, [card, markBubble, mark, title, body]);
+      root.add(themeView);
+      themeViews.push(themeView);
     });
-    this.addModalButton(root, 700, 930, 310, i18n.t('common.backStep'), false, () => {
-      this.showConsoleModal();
+    const summaryHighlight = this.add
+      .rectangle(490, 470, 438, 278, 0xf0c95a, 0.025)
+      .setStrokeStyle(4, Palette.gold, 0.96);
+    root.add(summaryHighlight);
+
+    const comparisonTitle = this.add
+      .text(960, 620, i18n.t('lab.summaryMethodCompare'), {
+        fontFamily: 'sans-serif',
+        fontSize: '21px',
+        color: '#e6f8fa',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    root.add(comparisonTitle);
+
+    const miniDefinitions = [
+      {
+        x: 490,
+        title: 'lab.summaryVesselMini',
+        tag: 'lab.summaryVesselMiniTag',
+        mark: '1×',
+        color: Palette.gold,
+      },
+      {
+        x: 960,
+        title: 'lab.summaryFixedMini',
+        tag: 'lab.summaryFixedMiniTag',
+        mark: '!',
+        color: 0x65cbea,
+      },
+      {
+        x: 1430,
+        title: 'lab.summaryFilmMini',
+        tag: 'lab.summaryFilmMiniTag',
+        mark: '24h',
+        color: Palette.success,
+      },
+    ] as const;
+    miniDefinitions.forEach((definition) => {
+      const card = createResearchSurface(this, definition.x, 720, 420, 150, {
+        fill: Palette.cardSoft,
+        border: definition.color,
+        borderAlpha: 0.5,
+        radius: 18,
+        shadow: false,
+      });
+      const title = this.add
+        .text(definition.x, 666, i18n.t(definition.title), {
+          fontFamily: 'sans-serif',
+          fontSize: '21px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+      const markBubble = this.add
+        .circle(definition.x, 720, 29, definition.color, 0.16)
+        .setStrokeStyle(2, definition.color, 0.72);
+      const mark = this.add
+        .text(definition.x, 720, definition.mark, {
+          fontFamily: 'monospace',
+          fontSize: definition.mark === '24h' ? '17px' : '22px',
+          color: Phaser.Display.Color.IntegerToColor(definition.color).rgba,
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      const tag = this.add
+        .text(definition.x, 768, i18n.t(definition.tag), {
+          fontFamily: 'sans-serif',
+          fontSize: '20px',
+          color: Phaser.Display.Color.IntegerToColor(definition.color).rgba,
+          fontStyle: 'bold',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+      root.add([card, title, markBubble, mark, tag]);
     });
-    this.addModalButton(root, 1220, 930, 360, i18n.t('lab.summaryFinish'), true, () =>
-      this.showFinalQuiz(),
+
+    const networkTakeaway = this.add
+      .text(960, 838, i18n.t('lab.summaryNetwork'), {
+        fontFamily: 'sans-serif',
+        fontSize: '22px',
+        color: '#dffcf5',
+        fontStyle: 'bold',
+        align: 'center',
+        backgroundColor: '#0f4d50dd',
+        padding: { x: 24, y: 9 },
+        wordWrap: { width: 1160, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    root.add(networkTakeaway);
+
+    this.addModalButton(root, 700, 940, 310, i18n.t('common.backStep'), false, () => {
+      this.showDeploymentResultModal();
+    });
+    const finishButton = new ResearchButton(
+      this,
+      1220,
+      940,
+      420,
+      64,
+      i18n.t('lab.summaryListenFirst'),
+      { tone: 'primary', fontSize: 22 },
     );
+    finishButton.setEnabled(false);
+    finishButton.onPress(() => this.showFinalQuiz());
+    root.add(finishButton.root);
+
+    const summaryScripts = {
+      can: [
+        '第一，魚用鰓取得水中嘅溶解氧。食物鏈互相連接，一種生物改變，亦可能影響其他生物。',
+        '第二，一張相或者一次讀數只係一個時刻。要比較時間、地點同深度，先至唔容易漏咗變化。',
+        '第三，新一代溶解氧傳感器可以喺多個地點同深度連續記錄。紫外光有助抑制附著，而薄膜亦可以更換。',
+      ],
+      pth: [
+        '第一，鱼用鳃取得水中的溶解氧。食物链互相连接，一种生物发生变化，也可能影响其他生物。',
+        '第二，一张照片或一次读数只是一个时刻。要比较时间、地点和深度，才不容易漏掉变化。',
+        '第三，新一代溶解氧传感器可以在多个地点和深度连续记录。紫外光有助于抑制附着，薄膜也可以更换。',
+      ],
+      eng: [
+        'First, fish use gills to take dissolved oxygen from water. Food chains connect, so a change in one organism may affect others.',
+        'Second, one photo or reading captures only one moment. Compare time, place and depth so important changes are not missed.',
+        'Third, next-generation dissolved oxygen sensors record continuously across locations and depths. Ultraviolet light helps suppress fouling, and the film is replaceable.',
+      ],
+    } as const;
+    const voiceLanguage = { can: 'zh-HK', pth: 'zh-CN', eng: 'en-US' } as const;
+    let fallbackTimer: Phaser.Time.TimerEvent | null = null;
+    const narrateTheme = (index: number): void => {
+      if (this.modalRoot !== root) return;
+      if (index >= themeViews.length) {
+        themeViews.forEach((view) => view.setAlpha(1));
+        summaryHighlight.setVisible(false);
+        finishButton.setText(i18n.t('lab.summaryFinish')).setEnabled(true);
+        return;
+      }
+      themeViews.forEach((view, viewIndex) => view.setAlpha(viewIndex === index ? 1 : 0.38));
+      summaryHighlight
+        .setPosition(490 + index * 470, 470)
+        .setVisible(true)
+        .setAlpha(1);
+      this.tweens.killTweensOf(summaryHighlight);
+      this.tweens.add({
+        targets: summaryHighlight,
+        alpha: { from: 0.28, to: 1 },
+        scale: { from: 0.985, to: 1.025 },
+        duration: 520,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+      let finished = false;
+      const finish = (): void => {
+        if (finished) return;
+        finished = true;
+        fallbackTimer?.remove(false);
+        fallbackTimer = null;
+        this.activeNarrationUtterance = null;
+        this.tweens.killTweensOf(summaryHighlight);
+        narrateTheme(index + 1);
+      };
+      const speechAvailable = !(
+        typeof window === 'undefined' ||
+        window.speechSynthesis === undefined ||
+        typeof SpeechSynthesisUtterance === 'undefined'
+      );
+      if (!speechAvailable) {
+        fallbackTimer = this.time.delayedCall(6500, finish);
+        return;
+      }
+      const voice = experiencePreferences.getVoice();
+      const utterance = new SpeechSynthesisUtterance(summaryScripts[voice][index] ?? '');
+      this.activeNarrationUtterance = utterance;
+      utterance.lang = voiceLanguage[voice];
+      utterance.rate = 0.9;
+      utterance.onend = () => {
+        if (this.activeNarrationUtterance === utterance) finish();
+      };
+      utterance.onerror = () => {
+        if (this.activeNarrationUtterance === utterance) finish();
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    };
+    const narrationStart = this.time.delayedCall(320, () => narrateTheme(0));
+    root.once('destroy', () => {
+      narrationStart.remove(false);
+      fallbackTimer?.remove(false);
+      this.tweens.killTweensOf(summaryHighlight);
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      this.activeNarrationUtterance = null;
+    });
   }
 
   private showFinalQuiz(): void {
     const root = this.createModal(
-      i18n.t('lab.finalQuizEyebrow'),
+      this.format('lab.finalQuizEyebrow', { step: '1 / 2' }),
       i18n.t('lab.finalQuizTitle'),
       i18n.t('lab.finalQuizBody'),
-      1320,
-      760,
+      1500,
+      780,
     );
-    const questionCard = createResearchSurface(this, 960, 470, 1080, 150, {
+    const questionCard = createResearchSurface(this, 960, 470, 1240, 150, {
       fill: Palette.cardSoft,
       border: Palette.gold,
       borderAlpha: 0.58,
@@ -1955,20 +3175,22 @@ export class Chapter2LabScene extends Phaser.Scene {
     const question = this.add
       .text(960, 470, `${i18n.t('common.questionLabel')} ${i18n.t('lab.finalQuizQuestion')}`, {
         fontFamily: 'sans-serif',
-        fontSize: '28px',
+        fontSize: '34px',
         color: Palette.textLight,
         fontStyle: 'bold',
         align: 'center',
         lineSpacing: 7,
-        wordWrap: { width: 980, useAdvancedWrap: true },
+        wordWrap: { width: 1160, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
-    const optionsLabel = this.add.text(470, 590, i18n.t('common.optionsLabel'), {
-      fontFamily: 'monospace',
-      fontSize: '20px',
-      color: '#f0c95a',
-      fontStyle: 'bold',
-    });
+    const optionsLabel = this.add
+      .text(370, 600, i18n.t('common.optionsLabel'), {
+        fontFamily: 'monospace',
+        fontSize: '29px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 1);
     const feedback = this.add
       .text(960, 790, '', {
         fontFamily: 'sans-serif',
@@ -1981,6 +3203,8 @@ export class Chapter2LabScene extends Phaser.Scene {
     root.add([questionCard, question, optionsLabel, feedback]);
 
     let finishButton: Phaser.GameObjects.Container | null = null;
+    let quizComplete = false;
+    const choiceButtons: ResearchButton[] = [];
     const choices = [
       { key: 'lab.finalQuizA', correct: false },
       { key: 'lab.finalQuizB', correct: true },
@@ -1988,20 +3212,29 @@ export class Chapter2LabScene extends Phaser.Scene {
     choices.forEach((choice, index) => {
       const button = new ResearchButton(
         this,
-        680 + index * 560,
+        630 + index * 660,
         680,
-        500,
-        84,
+        620,
+        124,
         `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
-        { tone: 'secondary', fontSize: 22 },
+        { tone: 'secondary', fontSize: 27, lineSpacing: 7 },
       );
       button.onPress(() => {
-        button.setTone(choice.correct ? 'primary' : 'danger');
-        feedback
-          .setText(i18n.t(choice.correct ? 'lab.finalQuizCorrect' : 'lab.finalQuizTryAgain'))
-          .setColor(choice.correct ? '#91e6a7' : '#ffb09d');
-        finishButton?.setVisible(choice.correct);
+        if (quizComplete) return;
+        if (!choice.correct) {
+          button.setTone('danger');
+          feedback.setText(i18n.t('lab.finalQuizTryAgain')).setColor('#ffb09d');
+          finishButton?.setVisible(false);
+          return;
+        }
+
+        quizComplete = true;
+        button.setTone('primary');
+        feedback.setText(i18n.t('lab.finalQuizCorrect')).setColor('#91e6a7');
+        finishButton?.setVisible(true);
+        choiceButtons.forEach((choiceButton) => choiceButton.setEnabled(false));
       });
+      choiceButtons.push(button);
       root.add(button.root);
     });
 
@@ -2013,10 +3246,293 @@ export class Chapter2LabScene extends Phaser.Scene {
       1180,
       870,
       370,
+      i18n.t('lab.finalQuizNext'),
+      true,
+      () => this.showFinalQuizSensorQuestion(),
+    ).setVisible(false);
+  }
+
+  private showFinalQuizSensorQuestion(): void {
+    const root = this.createModal(
+      this.format('lab.finalQuizEyebrow', { step: '2 / 2' }),
+      i18n.t('lab.finalQuizTitle'),
+      i18n.t('lab.finalQuizBody'),
+      1500,
+      780,
+    );
+    const questionCard = createResearchSurface(this, 960, 470, 1240, 150, {
+      fill: Palette.cardSoft,
+      border: Palette.gold,
+      borderAlpha: 0.58,
+      radius: 20,
+      shadow: false,
+    });
+    const question = this.add
+      .text(
+        960,
+        470,
+        `${i18n.t('common.questionLabel')} ${i18n.t('lab.finalQuizSensorQuestion')}`,
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '34px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 7,
+          wordWrap: { width: 1160, useAdvancedWrap: true },
+        },
+      )
+      .setOrigin(0.5);
+    const optionsLabel = this.add
+      .text(370, 600, i18n.t('common.optionsLabel'), {
+        fontFamily: 'monospace',
+        fontSize: '29px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 1);
+    const feedback = this.add
+      .text(960, 790, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#91e6a7',
+        align: 'center',
+        wordWrap: { width: 960, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    root.add([questionCard, question, optionsLabel, feedback]);
+
+    let finishButton: Phaser.GameObjects.Container | null = null;
+    let quizComplete = false;
+    const choiceButtons: ResearchButton[] = [];
+    const choices = [
+      { key: 'lab.finalQuizSensorA', correct: true },
+      { key: 'lab.finalQuizSensorB', correct: false },
+    ] as const;
+    choices.forEach((choice, index) => {
+      const button = new ResearchButton(
+        this,
+        630 + index * 660,
+        680,
+        620,
+        140,
+        `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
+        { tone: 'secondary', fontSize: 26, lineSpacing: 8 },
+      );
+      button.onPress(() => {
+        if (quizComplete) return;
+        if (!choice.correct) {
+          button.setTone('danger');
+          feedback.setText(i18n.t('lab.finalQuizSensorTryAgain')).setColor('#ffb09d');
+          finishButton?.setVisible(false);
+          return;
+        }
+
+        quizComplete = true;
+        button.setTone('primary');
+        feedback.setText(i18n.t('lab.finalQuizSensorCorrect')).setColor('#91e6a7');
+        finishButton?.setVisible(true);
+        choiceButtons.forEach((choiceButton) => choiceButton.setEnabled(false));
+      });
+      choiceButtons.push(button);
+      root.add(button.root);
+    });
+
+    this.addModalButton(root, 520, 870, 300, i18n.t('common.backStep'), false, () =>
+      this.showFinalQuiz(),
+    );
+    finishButton = this.addModalButton(
+      root,
+      1180,
+      870,
+      370,
       i18n.t('lab.finalQuizFinish'),
       true,
-      () => this.scene.start(SceneKeys.Menu, { screen: 'chapters' }),
+      () => this.showMissionCelebration(),
     ).setVisible(false);
+  }
+
+  private showMissionCelebration(): void {
+    const root = this.createModal(
+      i18n.t('lab.endingEyebrow'),
+      i18n.t('lab.endingTitle'),
+      i18n.t('lab.endingBody'),
+      1380,
+      820,
+    );
+    const achievements = [
+      { mark: '01', key: 'lab.endingBadgeChange' },
+      { mark: '02', key: 'lab.endingBadgeEvidence' },
+      { mark: '03', key: 'lab.endingBadgeNetwork' },
+    ] as const;
+    achievements.forEach((achievement, index) => {
+      const x = 600 + index * 360;
+      const card = createResearchSurface(this, x, 440, 310, 108, {
+        fill: Palette.cardSoft,
+        border: index === 1 ? Palette.gold : Palette.success,
+        borderAlpha: 0.58,
+        radius: 18,
+        shadow: false,
+      });
+      const mark = this.add
+        .text(x - 112, 440, achievement.mark, {
+          fontFamily: 'monospace',
+          fontSize: '20px',
+          color: index === 1 ? '#f0c95a' : '#91e6a7',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5);
+      const label = this.add
+        .text(x + 18, 440, i18n.t(achievement.key), {
+          fontFamily: 'sans-serif',
+          fontSize: '24px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          wordWrap: { width: 225, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5);
+      root.add([card, mark, label]);
+    });
+
+    const scienceSurface = createResearchSurface(this, 960, 665, 1120, 220, {
+      fill: Palette.cardSoft,
+      border: Palette.success,
+      borderAlpha: 0.68,
+      radius: 24,
+      shadow: false,
+    });
+    const scienceMark = this.add
+      .text(960, 575, '✦  OCEAN SCIENCE  ✦', {
+        fontFamily: 'monospace',
+        fontSize: '22px',
+        color: '#91e6a7',
+        fontStyle: 'bold',
+        letterSpacing: 2,
+      })
+      .setOrigin(0.5);
+    const scienceText = this.add
+      .text(960, 645, i18n.t('lab.endingRealScience'), {
+        fontFamily: 'sans-serif',
+        fontSize: '25px',
+        color: '#e5fbf6',
+        fontStyle: 'bold',
+        align: 'center',
+        lineSpacing: 10,
+        wordWrap: { width: 1000, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5);
+    const protectText = this.add
+      .text(960, 745, i18n.t('lab.endingProtect'), {
+        fontFamily: 'sans-serif',
+        fontSize: '24px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    root.add([scienceSurface, scienceMark, scienceText, protectText]);
+
+    for (let index = 0; index < 12; index += 1) {
+      const sparkle = this.add
+        .text(390 + index * 104, 370 + (index % 2) * 500, index % 3 === 0 ? '✦' : '·', {
+          fontFamily: 'sans-serif',
+          fontSize: index % 3 === 0 ? '30px' : '42px',
+          color: index % 2 === 0 ? '#ffe589' : '#8ff0df',
+          fontStyle: 'bold',
+        })
+        .setOrigin(0.5)
+        .setAlpha(0.2);
+      root.add(sparkle);
+      this.tweens.add({
+        targets: sparkle,
+        alpha: { from: 0.2, to: 1 },
+        scale: { from: 0.75, to: 1.25 },
+        duration: 620 + index * 24,
+        delay: index * 55,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
+
+    const endingButton = new ResearchButton(
+      this,
+      960,
+      930,
+      480,
+      64,
+      i18n.t('lab.endingListenFirst'),
+      { tone: 'primary', fontSize: 22 },
+    );
+    endingButton.setEnabled(false);
+    endingButton.onPress(() => this.scene.start(SceneKeys.Menu, { screen: 'chapters' }));
+    root.add(endingButton.root);
+
+    const endingScripts = {
+      can: {
+        lang: 'zh-HK',
+        text: '恭喜你完成海洋呼吸調查！你由舊相入面搵到變化，再用多個地點、多個深度同連續時間嘅監測網補足證據。今日真係有海洋學家同科學家，用傳感器、船隻同長期資料守護海洋。每一份可靠記錄，都可以幫助我哋了解同保護海洋生態。帶住好奇心返去生活，一齊留意同保護我哋嘅海洋。',
+      },
+      pth: {
+        lang: 'zh-CN',
+        text: '恭喜你完成海洋呼吸调查！你从旧照片里找到变化，再用多个地点、多个深度和连续时间的监测网补足证据。今天真的有海洋学家和科学家使用传感器、船只与长期资料守护海洋。每一份可靠记录，都能帮助我们了解和保护海洋生态。把好奇心带回生活，一起留意并保护我们的海洋。',
+      },
+      eng: {
+        lang: 'en-US',
+        text: 'Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean.',
+      },
+    } as const;
+    this.tweens.add({
+      targets: scienceSurface,
+      alpha: { from: 0.72, to: 1 },
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
+    let fallbackTimer: Phaser.Time.TimerEvent | null = null;
+    const completeNarration = (): void => {
+      if (this.modalRoot !== root) return;
+      fallbackTimer?.remove(false);
+      fallbackTimer = null;
+      this.activeNarrationUtterance = null;
+      this.tweens.killTweensOf(scienceSurface);
+      scienceSurface.setAlpha(1);
+      endingButton.setText(i18n.t('lab.endingAction')).setEnabled(true);
+    };
+    const narrationStart = this.time.delayedCall(380, () => {
+      const speechAvailable = !(
+        typeof window === 'undefined' ||
+        window.speechSynthesis === undefined ||
+        typeof SpeechSynthesisUtterance === 'undefined'
+      );
+      if (!speechAvailable) {
+        fallbackTimer = this.time.delayedCall(15000, completeNarration);
+        return;
+      }
+      const script = endingScripts[experiencePreferences.getVoice()];
+      const utterance = new SpeechSynthesisUtterance(script.text);
+      this.activeNarrationUtterance = utterance;
+      utterance.lang = script.lang;
+      utterance.rate = 0.9;
+      utterance.onend = () => {
+        if (this.activeNarrationUtterance === utterance) completeNarration();
+      };
+      utterance.onerror = () => {
+        if (this.activeNarrationUtterance === utterance) completeNarration();
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    });
+    root.once('destroy', () => {
+      narrationStart.remove(false);
+      fallbackTimer?.remove(false);
+      this.tweens.killTweensOf(scienceSurface);
+      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+      this.activeNarrationUtterance = null;
+    });
   }
 
   private drawDeviceGlyph(
@@ -2099,7 +3615,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       eyebrow,
       {
         fontFamily: 'monospace',
-        fontSize: '20px',
+        fontSize: '22px',
         color: '#f0c95a',
         fontStyle: 'bold',
         letterSpacing: 2,
@@ -2118,8 +3634,8 @@ export class Chapter2LabScene extends Phaser.Scene {
     const bodyText = this.add
       .text(GAME_WIDTH / 2, titleText.y + titleText.height + 24, body, {
         fontFamily: 'sans-serif',
-        fontSize: '24px',
-        color: '#a9c8d3',
+        fontSize: '25px',
+        color: '#bdd8df',
         align: 'center',
         lineSpacing: 6,
         wordWrap: { width: width - 260, useAdvancedWrap: true },
@@ -2127,6 +3643,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
     root.add([dim, panel, topLine, eyebrowText, titleText, bodyText]);
     this.modalRoot = root;
+    this.time.delayedCall(0, () => this.sharpenVisibleText());
     return root;
   }
 
@@ -2174,13 +3691,43 @@ export class Chapter2LabScene extends Phaser.Scene {
     });
   }
 
+  private playBudgetAlarm(): void {
+    const AudioContextConstructor = window.AudioContext;
+    if (AudioContextConstructor === undefined) return;
+    const context = new AudioContextConstructor();
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.13, context.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
+    gain.connect(context.destination);
+    [0, 0.18].forEach((delay) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(880, context.currentTime + delay);
+      oscillator.frequency.exponentialRampToValueAtTime(520, context.currentTime + delay + 0.12);
+      oscillator.connect(gain);
+      oscillator.start(context.currentTime + delay);
+      oscillator.stop(context.currentTime + delay + 0.14);
+      if (delay > 0) oscillator.addEventListener('ended', () => void context.close());
+    });
+  }
+
   private stepTextStyle(active: boolean): Phaser.Types.GameObjects.Text.TextStyle {
     return {
       fontFamily: 'monospace',
-      fontSize: '20px',
+      fontSize: '22px',
       color: active ? '#f0c95a' : '#617b86',
       fontStyle: 'bold',
     };
+  }
+
+  private sharpenVisibleText(): void {
+    const resolution = Math.min(window.devicePixelRatio || 1, 2);
+    const sharpen = (object: Phaser.GameObjects.GameObject): void => {
+      if (object instanceof Phaser.GameObjects.Text) object.setResolution(resolution);
+      if (object instanceof Phaser.GameObjects.Container) object.list.forEach(sharpen);
+    };
+    this.children.list.forEach(sharpen);
   }
 
   private format(key: string, replacements: Readonly<Record<string, string>>): string {

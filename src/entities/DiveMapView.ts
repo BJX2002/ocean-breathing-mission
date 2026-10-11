@@ -1,8 +1,19 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, HABITAT_FLOOR_Y, WATER_SURFACE_Y } from '../config/constants';
+import {
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  HABITAT_FLOOR_Y,
+  WATER_SURFACE_Y,
+  getHabitatFloorY,
+} from '../config/constants';
 import { eventBus } from '../events/EventBus';
-import { decorTextureKey, SEABED_TEXTURE } from '../graphics/TextureFactory';
+import {
+  decorTextureKey,
+  ensureEdgeTransparentTexture,
+  SEABED_TEXTURE,
+} from '../graphics/TextureFactory';
 import { i18n } from '../i18n/LocaleService';
+import { getCreatureFramePlan } from '../scenes/OpeningModel';
 import { CameraStation } from './CameraStation';
 import { SurveySubject, type SurveyInteraction } from './SurveySubject';
 import type { LayoutRect } from '../ui/SceneLayout';
@@ -26,6 +37,11 @@ export interface StationProgressInfo {
   readonly nearby: boolean;
 }
 
+export type DiveGuidedTarget =
+  | { readonly kind: 'station'; readonly stationId: string }
+  | { readonly kind: 'subject'; readonly speciesId: string }
+  | null;
+
 /**
  * Renders a dive map from validated {@link DiveMap} data: a seabed strip,
  * decorative habitat elements and historical camera-station landmarks.
@@ -39,6 +55,8 @@ export class DiveMapView {
   private readonly subjects: SurveySubject[] = [];
   private readonly stationPositions: readonly { x: number; y: number }[];
   private readonly layoutObstacles: LayoutRect[] = [];
+  private readonly animationTimers: Phaser.Time.TimerEvent[] = [];
+  private guidedTarget: DiveGuidedTarget = null;
 
   constructor(scene: Phaser.Scene, map: DiveMap, subjectLabels: ReadonlyMap<string, string>) {
     this.stationPositions = map.cameraStations.map(({ x, y }) => ({ x, y }));
@@ -68,7 +86,7 @@ export class DiveMapView {
     habitatShelf.beginPath();
     habitatShelf.moveTo(0, HABITAT_FLOOR_Y - 14);
     for (let x = 0; x <= GAME_WIDTH; x += 96) {
-      habitatShelf.lineTo(x, HABITAT_FLOOR_Y - 12 + Math.sin(x * 0.018) * 6);
+      habitatShelf.lineTo(x, getHabitatFloorY(x));
     }
     habitatShelf.lineTo(GAME_WIDTH, GAME_HEIGHT);
     habitatShelf.lineTo(0, GAME_HEIGHT);
@@ -78,7 +96,7 @@ export class DiveMapView {
     habitatShelf.beginPath();
     habitatShelf.moveTo(0, HABITAT_FLOOR_Y - 14);
     for (let x = 0; x <= GAME_WIDTH; x += 96) {
-      habitatShelf.lineTo(x, HABITAT_FLOOR_Y - 12 + Math.sin(x * 0.018) * 6);
+      habitatShelf.lineTo(x, getHabitatFloorY(x));
     }
     habitatShelf.strokePath();
     for (let i = 0; i < 88; i += 1) {
@@ -98,12 +116,15 @@ export class DiveMapView {
 
     // One quiet background school gives the bay depth without filling the
     // play space with several competing fish-cluster effects.
-    if (scene.textures.exists('chapter1-fish-school-small')) {
+    if (
+      !this.addAnimatedBackgroundSchool(scene) &&
+      scene.textures.exists('chapter1-fish-school-small')
+    ) {
       const school = scene.add
         .image(1090, 280, 'chapter1-fish-school-small')
         .setOrigin(0.5)
         .setCrop(420, 275, 720, 350)
-        .setDisplaySize(440, 214)
+        .setDisplaySize(352, 171)
         .setAlpha(0.32)
         .setDepth(0);
       this.decor.push(school);
@@ -185,22 +206,72 @@ export class DiveMapView {
     });
 
     for (const subject of map.subjects) {
-      this.subjects.push(
-        new SurveySubject(
-          scene,
-          subject,
-          subjectLabels.get(subject.speciesId) ?? subject.speciesId,
-        ),
+      const subjectEntity = new SurveySubject(
+        scene,
+        subject,
+        subjectLabels.get(subject.speciesId) ?? subject.speciesId,
       );
+      this.subjects.push(subjectEntity);
       // Reserve the subject, label, and status glyph as one conservative
       // rectangle so a card never hides the encounter it is describing.
+      const subjectPosition = subjectEntity.position;
       this.layoutObstacles.push({
-        x: subject.x - 125,
-        y: subject.y - 145,
+        x: subjectPosition.x - 125,
+        y: subjectPosition.y - 145,
         width: 250,
         height: 245,
       });
     }
+  }
+
+  /** Use the supplied body-motion frames instead of sliding one static school image. */
+  private addAnimatedBackgroundSchool(scene: Phaser.Scene): boolean {
+    const plan = getCreatureFramePlan('blue-damselfish');
+    if (plan === null) return false;
+    const frameKeys = plan.indices.flatMap((index) => {
+      const sourceKey = `chapter1-subject-blue-damselfish-frame-${String(index).padStart(2, '0')}`;
+      if (!scene.textures.exists(sourceKey)) return [];
+      const transparentKey = `${sourceKey}-edge-transparent`;
+      return ensureEdgeTransparentTexture(scene, sourceKey, transparentKey) &&
+        scene.textures.exists(transparentKey)
+        ? [transparentKey]
+        : [];
+    });
+    if (frameKeys.length < 2) return false;
+
+    const source = scene.textures.get(frameKeys[0]!).getSourceImage();
+    const baseScale = 77 / Math.max(source.width, source.height);
+    const root = scene.add.container(1090, 280).setAlpha(0.36).setDepth(0);
+    const fish = [
+      scene.add.image(-72, -10, frameKeys[0]!).setScale(baseScale * 0.82),
+      scene.add.image(0, 12, frameKeys[0]!).setScale(baseScale),
+      scene.add.image(74, -2, frameKeys[0]!).setScale(baseScale * 0.68),
+    ];
+    root.add(fish);
+    this.decor.push(root);
+
+    let frameIndex = 0;
+    const timer = scene.time.addEvent({
+      delay: plan.frameDurationMs,
+      loop: true,
+      callback: () => {
+        frameIndex = (frameIndex + 1) % frameKeys.length;
+        fish.forEach((image, index) => {
+          image.setTexture(frameKeys[(frameIndex + index * 2) % frameKeys.length]!);
+        });
+      },
+    });
+    this.animationTimers.push(timer);
+    scene.tweens.add({
+      targets: root,
+      x: { from: 1020, to: 1160 },
+      y: { from: 271, to: 289 },
+      duration: 13000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+    return true;
   }
 
   /**
@@ -264,10 +335,10 @@ export class DiveMapView {
     const label = scene.add
       .text(0, -48, i18n.getLocale() === 'en' ? 'AQUACULTURE RAFT' : '養殖魚排', {
         fontFamily: 'sans-serif',
-        fontSize: '16px',
+        fontSize: '20px',
         color: '#e6f7ff',
         backgroundColor: '#062838cc',
-        padding: { x: 10, y: 5 },
+        padding: { x: 12, y: 6 },
         fontStyle: 'bold',
       })
       .setOrigin(0.5);
@@ -309,11 +380,17 @@ export class DiveMapView {
     }));
   }
 
+  /** Keep exactly one gold mission target active at a time. */
+  setGuidedTarget(target: DiveGuidedTarget): void {
+    this.guidedTarget = target;
+  }
+
   /** Check diver proximity to stations; emit an event on new discoveries. */
   update(diverX: number, diverY: number): SubjectFocusInfo | null {
-    const guidedStation = this.stations.find((station) => !station.hasPhoto) ?? null;
     for (const station of this.stations) {
-      station.setGuidedTarget(station === guidedStation);
+      station.setGuidedTarget(
+        this.guidedTarget?.kind === 'station' && station.id === this.guidedTarget.stationId,
+      );
       station.updateFocus(diverX, diverY);
       if (station.tryDiscover(diverX, diverY)) {
         eventBus.emit('station:discovered', {
@@ -323,9 +400,10 @@ export class DiveMapView {
         });
       }
     }
-    const guidedSubject = this.subjects.find((subject) => !subject.hasPhoto) ?? null;
     for (const subject of this.subjects) {
-      subject.setGuidedTarget(subject === guidedSubject);
+      subject.setGuidedTarget(
+        this.guidedTarget?.kind === 'subject' && subject.speciesId === this.guidedTarget.speciesId,
+      );
       if (subject.updateFocus(diverX, diverY)) {
         eventBus.emit('subject:discovered', {
           subjectId: subject.id,
@@ -350,12 +428,18 @@ export class DiveMapView {
   }
 
   /** Photograph the closest nearby organism with the diver's camera. */
-  tryPhotographSubject(diverX: number, diverY: number): SurveyInteraction | null {
-    const ordered = [...this.subjects].sort(
-      (a, b) =>
-        Phaser.Math.Distance.Between(diverX, diverY, a.position.x, a.position.y) -
-        Phaser.Math.Distance.Between(diverX, diverY, b.position.x, b.position.y),
-    );
+  tryPhotographSubject(
+    diverX: number,
+    diverY: number,
+    speciesId?: string,
+  ): SurveyInteraction | null {
+    const ordered = this.subjects
+      .filter((subject) => speciesId === undefined || subject.speciesId === speciesId)
+      .sort(
+        (a, b) =>
+          Phaser.Math.Distance.Between(diverX, diverY, a.position.x, a.position.y) -
+          Phaser.Math.Distance.Between(diverX, diverY, b.position.x, b.position.y),
+      );
     for (const subject of ordered) {
       const interaction = subject.tryPhotograph(diverX, diverY);
       if (interaction !== null) return interaction;
@@ -364,12 +448,14 @@ export class DiveMapView {
   }
 
   /** Photograph the closest fixed historical survey point. */
-  tryPhotographStation(diverX: number, diverY: number): string | null {
-    const ordered = [...this.stations].sort(
-      (a, b) =>
-        Phaser.Math.Distance.Between(diverX, diverY, a.position.x, a.position.y) -
-        Phaser.Math.Distance.Between(diverX, diverY, b.position.x, b.position.y),
-    );
+  tryPhotographStation(diverX: number, diverY: number, stationId?: string): string | null {
+    const ordered = this.stations
+      .filter((station) => stationId === undefined || station.id === stationId)
+      .sort(
+        (a, b) =>
+          Phaser.Math.Distance.Between(diverX, diverY, a.position.x, a.position.y) -
+          Phaser.Math.Distance.Between(diverX, diverY, b.position.x, b.position.y),
+      );
     for (const station of ordered) {
       if (station.tryPhotograph(diverX, diverY)) return station.id;
     }
@@ -379,9 +465,11 @@ export class DiveMapView {
   getNearestPhotographableStation(
     x: number,
     y: number,
+    stationId?: string,
   ): { id: string; displayName: string; distance: number } | null {
     let nearest: { id: string; displayName: string; distance: number } | null = null;
     for (const station of this.stations) {
+      if (stationId !== undefined && station.id !== stationId) continue;
       if (!station.canPhotograph) continue;
       const distance = station.distanceTo(x, y);
       if (distance > 190 || (nearest !== null && distance >= nearest.distance)) continue;
@@ -429,9 +517,11 @@ export class DiveMapView {
   getNearestPhotographableSubject(
     x: number,
     y: number,
+    speciesId?: string,
   ): { speciesId: string; label: string; distance: number } | null {
     let nearest: { speciesId: string; label: string; distance: number } | null = null;
     for (const subject of this.subjects) {
+      if (speciesId !== undefined && subject.speciesId !== speciesId) continue;
       if (subject.hasPhoto) continue;
       const distance = Phaser.Math.Distance.Between(x, y, subject.position.x, subject.position.y);
       if (distance > 128 || (nearest !== null && distance >= nearest.distance)) continue;
@@ -445,6 +535,7 @@ export class DiveMapView {
   }
 
   destroy(): void {
+    for (const timer of this.animationTimers) timer.remove(false);
     for (const image of this.decor) image.destroy();
     for (const station of this.stations) station.destroy();
     for (const subject of this.subjects) subject.destroy();
@@ -452,5 +543,6 @@ export class DiveMapView {
     this.stations.length = 0;
     this.subjects.length = 0;
     this.layoutObstacles.length = 0;
+    this.animationTimers.length = 0;
   }
 }

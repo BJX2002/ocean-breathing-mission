@@ -34,14 +34,10 @@ export interface DeploymentScenario {
 }
 
 export interface DeploymentGoals {
-  /** At least one supported placement records automatically across the day. */
-  readonly continuousRecording: boolean;
-  /** Every required location has continuous, depth-compatible coverage. */
-  readonly allLocationsCovered: boolean;
-  /** Continuous placements cover the scenario's required number of depth zones. */
-  readonly multipleDepthsCovered: boolean;
-  /** A budget-compliant continuous placement covers the hidden event point. */
-  readonly eventDetected: boolean;
+  /** Every location-by-depth point in the 3-by-3 mission grid has a tool. */
+  readonly allPointsCovered: boolean;
+  /** Every point keeps a complete continuous record with no missing interval. */
+  readonly completeDataAtAllPoints: boolean;
   readonly withinBudget: boolean;
 }
 
@@ -53,9 +49,49 @@ export interface DeploymentEvaluation {
   readonly coveredDepthZones: readonly DepthZone[];
   readonly operationalPlacementCount: number;
   readonly continuousPlacementCount: number;
+  readonly coveredPointCount: number;
+  readonly completePointCount: number;
   readonly unsupportedPlacements: readonly DeploymentPlacement[];
   readonly goals: DeploymentGoals;
   /** True only when every visible gameplay goal is satisfied. */
+  readonly success: boolean;
+}
+
+/** How much time information a deployed tool actually recorded in one grid cell. */
+export type DeploymentRecordMode = 'unmonitored' | 'manual' | 'continuous' | 'unsupported';
+
+export interface DeploymentDoReading {
+  readonly hour: number;
+  readonly value: number;
+}
+
+export interface DeploymentSignalGap {
+  readonly fromHour: number;
+  readonly toHour: number;
+  readonly reason: 'biofouling';
+}
+
+/**
+ * One cell from a completed 24-hour run. Unmonitored cells are kept in the
+ * snapshot so the result screen can show data gaps without inventing values.
+ */
+export interface DeploymentCellRecord extends DeploymentPoint {
+  readonly gridIndex: number;
+  readonly sensorId: string | null;
+  readonly mode: DeploymentRecordMode;
+  readonly readings: readonly DeploymentDoReading[];
+  readonly signalGaps: readonly DeploymentSignalGap[];
+  readonly lowOxygenDetected: boolean;
+}
+
+/** Immutable input for the deployment result screen. */
+export interface DeploymentRunSnapshot {
+  readonly dataBasis: typeof DEPLOYMENT_DATA_BASIS;
+  readonly evaluation: DeploymentEvaluation;
+  readonly cells: readonly DeploymentCellRecord[];
+  /** True when an actually recorded value—not an unseen scenario value—is low. */
+  readonly eventDetected: boolean;
+  /** Kept separate from detection because coverage and budget are also goals. */
   readonly success: boolean;
 }
 
@@ -74,13 +110,57 @@ export const DEMO_DEPLOYMENT_SCENARIO: DeploymentScenario = {
   },
 };
 
-/** Purchase plus the one-round maintenance cost used by the DEMO game. */
+/** Sampling times shown in the teaching game's continuous 24-hour record. */
+export const DEMO_CONTINUOUS_RECORD_HOURS = [
+  0, 2, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24,
+] as const;
+
+/** The vessel returns once in the afternoon in this teaching scenario. */
+export const DEMO_MANUAL_SAMPLE_HOUR = 14;
+
+/**
+ * Educational comparison event for a conventional fixed probe. It illustrates
+ * that biological growth can interrupt a signal; it is not a failure-rate claim.
+ */
+export const DEMO_FIXED_PROBE_SIGNAL_GAP: DeploymentSignalGap = {
+  fromHour: 9,
+  toHour: 13,
+  reason: 'biofouling',
+};
+
+export function demoSignalGapsForSensor(sensor: Sensor): readonly DeploymentSignalGap[] {
+  return sensor.id === 'fixed-probe' ? [DEMO_FIXED_PROBE_SIGNAL_GAP] : [];
+}
+
+export function demoSensorHasSignalAtHour(sensor: Sensor, hour: number): boolean {
+  return !demoSignalGapsForSensor(sensor).some((gap) => hour >= gap.fromHour && hour <= gap.toHour);
+}
+
+/** Up-front deployment cost used by the DEMO game. Repairs are charged later. */
 export function deploymentCost(sensor: Sensor): number {
-  return sensor.unitCost + sensor.maintenanceCost;
+  return sensor.unitCost;
 }
 
 export function totalDeploymentCost(placements: readonly DeploymentPlacement[]): number {
-  return placements.reduce((total, placement) => total + deploymentCost(placement.sensor), 0);
+  const chargedPlacements = new Set<string>();
+  let total = 0;
+  placements.forEach((placement) => {
+    // One vessel visit samples all three depths in the selected location, so
+    // its three covered cells are one paid trip rather than three boats.
+    const key =
+      placement.sensor.id === 'vessel-sampling'
+        ? `${placement.sensor.id}:${placement.locationId}`
+        : `${placement.sensor.id}:${placement.locationId}:${placement.depthZone}`;
+    if (chargedPlacements.has(key)) return;
+    chargedPlacements.add(key);
+    total += deploymentCost(placement.sensor);
+  });
+  return total;
+}
+
+/** Repair cost paid after a conventional probe loses its signal. */
+export function repairCost(sensor: Sensor): number {
+  return sensor.id === 'fixed-probe' ? sensor.maintenanceCost : 0;
 }
 
 /** A device may be placed at its maximum supported zone or any shallower zone. */
@@ -96,6 +176,11 @@ export function sensorSupportsDepth(sensor: Sensor, targetDepth: DepthZone): boo
  */
 export function providesContinuousCoverage(sensor: Sensor): boolean {
   return sensor.continuous && sensor.samplingIntervalMinutes > 0;
+}
+
+/** A complete day must be continuous and contain no simulated signal gap. */
+export function providesCompleteDayRecord(sensor: Sensor): boolean {
+  return providesContinuousCoverage(sensor) && demoSignalGapsForSensor(sensor).length === 0;
 }
 
 export function placementCoversEvent(
@@ -178,19 +263,29 @@ export function evaluateDeployment(
   const coveredLocationSet = new Set(continuousPlacements.map((placement) => placement.locationId));
   const coveredDepthSet = new Set(continuousPlacements.map((placement) => placement.depthZone));
   const requiredLocationIds = [...new Set(scenario.requiredLocationIds)];
-  const minimumDepthZones = Math.max(0, Math.floor(scenario.minimumDepthZones));
+  const requiredPointKeys = new Set(
+    requiredLocationIds.flatMap((locationId) =>
+      DEPTH_ZONE_ORDER.map((depthZone) => `${locationId}:${depthZone}`),
+    ),
+  );
+  const operationalPointKeys = new Set(
+    operationalPlacements.map(({ locationId, depthZone }) => `${locationId}:${depthZone}`),
+  );
+  const completePointKeys = new Set(
+    operationalPlacements
+      .filter(({ sensor }) => providesCompleteDayRecord(sensor))
+      .map(({ locationId, depthZone }) => `${locationId}:${depthZone}`),
+  );
+  const coveredPointCount = [...requiredPointKeys].filter((key) =>
+    operationalPointKeys.has(key),
+  ).length;
+  const completePointCount = [...requiredPointKeys].filter((key) =>
+    completePointKeys.has(key),
+  ).length;
 
   const goals: DeploymentGoals = {
-    continuousRecording: continuousPlacements.length > 0,
-    allLocationsCovered: requiredLocationIds.every((locationId) =>
-      coveredLocationSet.has(locationId),
-    ),
-    multipleDepthsCovered: coveredDepthSet.size >= minimumDepthZones,
-    eventDetected:
-      withinBudget &&
-      continuousPlacements.some((placement) =>
-        placementCoversEvent(placement, scenario.eventPoint),
-      ),
+    allPointsCovered: coveredPointCount === requiredPointKeys.size,
+    completeDataAtAllPoints: completePointCount === requiredPointKeys.size,
     withinBudget,
   };
 
@@ -202,8 +297,101 @@ export function evaluateDeployment(
     coveredDepthZones: DEPTH_ZONE_ORDER.filter((depth) => coveredDepthSet.has(depth)),
     operationalPlacementCount: operationalPlacements.length,
     continuousPlacementCount: continuousPlacements.length,
+    coveredPointCount,
+    completePointCount,
     unsupportedPlacements,
     goals,
     success: Object.values(goals).every(Boolean),
+  };
+}
+
+/**
+ * Capture exactly what the player's current tools could have measured during
+ * the run. The result UI must read this snapshot instead of a default curve.
+ */
+export function createDeploymentRunSnapshot(
+  placements: readonly DeploymentPlacement[],
+  scenario: DeploymentScenario = DEMO_DEPLOYMENT_SCENARIO,
+): DeploymentRunSnapshot {
+  const evaluation = evaluateDeployment(placements, scenario);
+  const placementByGridIndex = new Map<number, DeploymentPlacement>();
+
+  for (const placement of placements) {
+    const column = DEMO_LOCATION_IDS.indexOf(
+      placement.locationId as (typeof DEMO_LOCATION_IDS)[number],
+    );
+    const row = DEPTH_ZONE_ORDER.indexOf(placement.depthZone);
+    if (column < 0 || row < 0) continue;
+    placementByGridIndex.set(row * DEMO_LOCATION_IDS.length + column, placement);
+  }
+
+  const cells: DeploymentCellRecord[] = [];
+  const cellCount = DEMO_LOCATION_IDS.length * DEPTH_ZONE_ORDER.length;
+  for (let gridIndex = 0; gridIndex < cellCount; gridIndex += 1) {
+    const column = gridIndex % DEMO_LOCATION_IDS.length;
+    const row = Math.floor(gridIndex / DEMO_LOCATION_IDS.length);
+    const locationId = DEMO_LOCATION_IDS[column];
+    const depthZone = DEPTH_ZONE_ORDER[row];
+    if (locationId === undefined || depthZone === undefined) continue;
+
+    const placement = placementByGridIndex.get(gridIndex);
+    if (placement === undefined) {
+      cells.push({
+        gridIndex,
+        locationId,
+        depthZone,
+        sensorId: null,
+        mode: 'unmonitored',
+        readings: [],
+        signalGaps: [],
+        lowOxygenDetected: false,
+      });
+      continue;
+    }
+
+    if (!sensorSupportsDepth(placement.sensor, placement.depthZone)) {
+      cells.push({
+        gridIndex,
+        locationId,
+        depthZone,
+        sensorId: placement.sensor.id,
+        mode: 'unsupported',
+        readings: [],
+        signalGaps: [],
+        lowOxygenDetected: false,
+      });
+      continue;
+    }
+
+    const mode: DeploymentRecordMode = providesContinuousCoverage(placement.sensor)
+      ? 'continuous'
+      : 'manual';
+    const signalGaps = mode === 'continuous' ? demoSignalGapsForSensor(placement.sensor) : [];
+    const hours = mode === 'continuous' ? DEMO_CONTINUOUS_RECORD_HOURS : [DEMO_MANUAL_SAMPLE_HOUR];
+    const readings = hours
+      .filter((hour) => demoSensorHasSignalAtHour(placement.sensor, hour))
+      .flatMap((hour) => {
+        const value = demoDoValueAtGridIndex(gridIndex, hour);
+        return value === null ? [] : [{ hour, value }];
+      });
+    cells.push({
+      gridIndex,
+      locationId,
+      depthZone,
+      sensorId: placement.sensor.id,
+      mode,
+      readings,
+      signalGaps,
+      lowOxygenDetected: readings.some((reading) => reading.value < DEMO_LOW_OXYGEN_THRESHOLD_MG_L),
+    });
+  }
+
+  const eventDetected = cells.some((cell) => cell.lowOxygenDetected);
+  return {
+    dataBasis: DEPLOYMENT_DATA_BASIS,
+    evaluation,
+    cells,
+    eventDetected,
+    success: evaluation.success,
   };
 }

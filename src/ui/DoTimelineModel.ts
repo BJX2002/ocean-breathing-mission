@@ -5,6 +5,11 @@ export interface DoReading {
   readonly value: number;
 }
 
+export interface DoSignalGap {
+  readonly fromHour: number;
+  readonly toHour: number;
+}
+
 /**
  * A deliberately simple teaching curve. It is not product-performance data.
  * The pre-dawn dip makes the value of continuous monitoring visible to pupils.
@@ -50,4 +55,22 @@ export function findLowestDoReading(readings: readonly DoReading[]): DoReading |
     if (lowest === null || reading.value < lowest.value) lowest = reading;
   }
   return lowest;
+}
+
+/** Split a series so renderers never draw a false line across a missing interval. */
+export function splitDoReadingsAtGaps(
+  readings: readonly DoReading[],
+  gaps: readonly DoSignalGap[],
+): DoReading[][] {
+  const segments: DoReading[][] = [];
+  for (const reading of readings) {
+    const activeSegment = segments.at(-1);
+    const previous = activeSegment?.at(-1);
+    const crossesGap =
+      previous !== undefined &&
+      gaps.some(({ fromHour, toHour }) => previous.hour < toHour && reading.hour > fromHour);
+    if (activeSegment === undefined || crossesGap) segments.push([reading]);
+    else activeSegment.push(reading);
+  }
+  return segments;
 }

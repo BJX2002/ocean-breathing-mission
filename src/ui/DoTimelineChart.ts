@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { Palette } from '../config/constants';
 import {
-  DEFAULT_DAWN_DIP_SERIES,
   findLowestDoReading,
   normalizeDoReadings,
+  splitDoReadingsAtGaps,
+  type DoSignalGap,
   type DoReading,
 } from './DoTimelineModel';
 
@@ -27,6 +28,9 @@ export interface DoTimelineChartCopy {
   readonly manualHint: string;
   readonly continuousStatus: string;
   readonly continuousHint: string;
+  readonly signalGapStatus: string;
+  readonly signalGapHint: string;
+  readonly signalGapLabel: string;
   readonly sampleLabel: string;
   readonly detectedLabel: string;
   readonly thresholdLabel: string;
@@ -42,6 +46,8 @@ export interface DoTimelineChartOptions {
   readonly depth?: number;
 }
 
+export type DoTimelineSignalGap = DoSignalGap;
+
 type ChartMode = 'empty' | 'manual' | 'continuous';
 
 const DEFAULT_COPY: DoTimelineChartCopy = {
@@ -53,6 +59,9 @@ const DEFAULT_COPY: DoTimelineChartCopy = {
   manualHint: '其他時間發生了什麼？',
   continuousStatus: '整晚持續記錄',
   continuousHint: '✓ 連續資料找到了清晨的變化',
+  signalGapStatus: '記錄有斷點',
+  signalGapHint: '生物附著造成一段訊號中斷',
+  signalGapLabel: '生物附著／訊號中斷',
   sampleLabel: '一次讀數',
   detectedLabel: '抓到了！清晨低氧',
   thresholdLabel: '教學警戒線',
@@ -87,8 +96,9 @@ export class DoTimelineChart {
   private readonly objects: Phaser.GameObjects.GameObject[] = [];
   private bounds: DoTimelineChartBounds;
   private mode: ChartMode = 'empty';
-  private manualReading: DoReading = { hour: 14.33, value: 5.8 };
-  private continuousReadings: readonly DoReading[] = DEFAULT_DAWN_DIP_SERIES;
+  private manualReading: DoReading | null = null;
+  private continuousReadings: readonly DoReading[] = [];
+  private continuousGaps: readonly DoTimelineSignalGap[] = [];
   private destroyed = false;
 
   constructor(
@@ -114,25 +124,40 @@ export class DoTimelineChart {
 
   showEmpty(): this {
     if (this.destroyed) return this;
+    this.continuousGaps = [];
     this.mode = 'empty';
     this.render();
     return this;
   }
 
-  showManualSample(reading: DoReading = { hour: 14.33, value: 5.8 }): this {
+  showManualSample(reading: DoReading): this {
     if (this.destroyed) return this;
+    this.continuousGaps = [];
     const normalized = normalizeDoReadings([reading], this.minMgPerL, this.maxMgPerL);
-    this.manualReading = normalized[0] ?? { hour: 14.33, value: 5.8 };
-    this.mode = 'manual';
+    this.manualReading = normalized[0] ?? null;
+    this.mode = this.manualReading === null ? 'empty' : 'manual';
     this.render();
     return this;
   }
 
-  showContinuousSeries(readings: readonly DoReading[] = DEFAULT_DAWN_DIP_SERIES): this {
+  showContinuousSeries(
+    readings: readonly DoReading[],
+    gaps: readonly DoTimelineSignalGap[] = [],
+  ): this {
     if (this.destroyed) return this;
     const normalized = normalizeDoReadings(readings, this.minMgPerL, this.maxMgPerL);
-    this.continuousReadings = normalized.length > 0 ? normalized : DEFAULT_DAWN_DIP_SERIES;
-    this.mode = 'continuous';
+    this.continuousReadings = normalized;
+    this.continuousGaps = gaps
+      .filter(
+        ({ fromHour, toHour }) =>
+          Number.isFinite(fromHour) && Number.isFinite(toHour) && toHour > fromHour,
+      )
+      .map(({ fromHour, toHour }) => ({
+        fromHour: Phaser.Math.Clamp(fromHour, 0, 24),
+        toHour: Phaser.Math.Clamp(toHour, 0, 24),
+      }))
+      .filter(({ fromHour, toHour }) => toHour > fromHour);
+    this.mode = normalized.length > 0 ? 'continuous' : 'empty';
     this.render();
     return this;
   }
@@ -190,7 +215,7 @@ export class DoTimelineChart {
 
     if (this.mode === 'manual') this.drawManualSeries(surface, plot, scale);
     else if (this.mode === 'continuous') this.drawContinuousSeries(surface, plot, scale);
-    else this.drawEmptyState(plot, scale);
+    else this.drawEmptyState(surface, plot, scale);
 
     this.drawFooter(width, height, scale);
   }
@@ -201,17 +226,22 @@ export class DoTimelineChart {
     width: number,
     scale: number,
   ): void {
+    const hasSignalGap = this.mode === 'continuous' && this.continuousGaps.length > 0;
     const status =
       this.mode === 'manual'
         ? this.copy.manualStatus
         : this.mode === 'continuous'
-          ? this.copy.continuousStatus
+          ? hasSignalGap
+            ? this.copy.signalGapStatus
+            : this.copy.continuousStatus
           : this.copy.emptyStatus;
     const statusColor =
       this.mode === 'manual'
         ? Palette.gold
         : this.mode === 'continuous'
-          ? Palette.success
+          ? hasSignalGap
+            ? Palette.gold
+            : Palette.success
           : Palette.accent;
     const chipWidth = Phaser.Math.Clamp(width * 0.31, 112, 194);
     const chipHeight = 30 * scale;
@@ -227,13 +257,13 @@ export class DoTimelineChart {
 
     this.addText(padding, 14 * scale, this.copy.title, {
       fontFamily: TEXT_FONT,
-      fontSize: `${Math.round(21 * scale)}px`,
+      fontSize: `${Math.round(24 * scale)}px`,
       color: Palette.textLight,
       fontStyle: 'bold',
     });
     this.addText(chipX + chipWidth / 2 + 5 * scale, chipY + chipHeight / 2, status, {
       fontFamily: TEXT_FONT,
-      fontSize: `${Math.round(13 * scale)}px`,
+      fontSize: `${Math.round(15 * scale)}px`,
       color: this.numberToCss(statusColor),
       fontStyle: 'bold',
       align: 'center',
@@ -258,7 +288,7 @@ export class DoTimelineChart {
       graphics.lineBetween(plot.left, y, plot.right, y);
       this.addText(plot.left - 9 * scale, y, String(value), {
         fontFamily: NUMBER_FONT,
-        fontSize: `${Math.round(11 * scale)}px`,
+        fontSize: `${Math.round(14 * scale)}px`,
         color: Palette.textMuted,
         align: 'right',
       }).setOrigin(1, 0.5);
@@ -270,7 +300,7 @@ export class DoTimelineChart {
       graphics.lineBetween(x, plot.top, x, plot.bottom);
       this.addText(x, plot.bottom + 9 * scale, `${String(hour).padStart(2, '0')}:00`, {
         fontFamily: NUMBER_FONT,
-        fontSize: `${Math.round(11 * scale)}px`,
+        fontSize: `${Math.round(14 * scale)}px`,
         color: Palette.textMuted,
       }).setOrigin(0.5, 0);
     }
@@ -280,7 +310,7 @@ export class DoTimelineChart {
 
     this.addText(plot.left, plot.top - 7 * scale, this.copy.unit, {
       fontFamily: NUMBER_FONT,
-      fontSize: `${Math.round(11 * scale)}px`,
+      fontSize: `${Math.round(14 * scale)}px`,
       color: Palette.textMuted,
       fontStyle: 'bold',
     }).setOrigin(0, 1);
@@ -288,7 +318,7 @@ export class DoTimelineChart {
     const thresholdText = `${this.copy.thresholdLabel}  ${this.thresholdMgPerL.toFixed(1)} mg/L`;
     this.addText(plot.right - 5 * scale, thresholdY - 5 * scale, thresholdText, {
       fontFamily: TEXT_FONT,
-      fontSize: `${Math.round(11 * scale)}px`,
+      fontSize: `${Math.round(14 * scale)}px`,
       color: '#ff9f8c',
       fontStyle: 'bold',
       backgroundColor: '#281c21dd',
@@ -297,20 +327,32 @@ export class DoTimelineChart {
 
     this.addText((dawnLeft + dawnRight) / 2, plot.top + 5 * scale, this.copy.dawnLabel, {
       fontFamily: TEXT_FONT,
-      fontSize: `${Math.round(10 * scale)}px`,
+      fontSize: `${Math.round(13 * scale)}px`,
       color: '#f5d778',
       fontStyle: 'bold',
     }).setOrigin(0.5, 0);
   }
 
-  private drawEmptyState(plot: PlotRect, scale: number): void {
+  private drawEmptyState(
+    graphics: Phaser.GameObjects.Graphics,
+    plot: PlotRect,
+    scale: number,
+  ): void {
+    graphics.lineStyle(2, 0x6f8d98, 0.12);
+    const spacing = 34 * scale;
+    for (let offset = -plot.height; offset < plot.width; offset += spacing) {
+      const startX = Math.max(plot.left, plot.left + offset);
+      const startY = plot.bottom - Math.max(0, -offset);
+      const travel = Math.min(plot.right - startX, startY - plot.top);
+      if (travel > 0) graphics.lineBetween(startX, startY, startX + travel, startY - travel);
+    }
     this.addText(
       (plot.left + plot.right) / 2,
       (plot.top + plot.bottom) / 2,
       this.copy.emptyPrompt,
       {
         fontFamily: TEXT_FONT,
-        fontSize: `${Math.round(16 * scale)}px`,
+        fontSize: `${Math.round(18 * scale)}px`,
         color: Palette.textMuted,
         align: 'center',
         wordWrap: { width: plot.width * 0.72, useAdvancedWrap: true },
@@ -323,6 +365,8 @@ export class DoTimelineChart {
     plot: PlotRect,
     scale: number,
   ): void {
+    const reading = this.manualReading;
+    if (reading === null) return;
     const missingHours = [2, 6, 10, 18, 22];
     missingHours.forEach((hour, index) => {
       const value = index % 2 === 0 ? 5 : 4.7;
@@ -336,8 +380,8 @@ export class DoTimelineChart {
         .setAlpha(0.56);
     });
 
-    const x = this.xForHour(this.manualReading.hour, plot);
-    const y = this.yForValue(this.manualReading.value, plot);
+    const x = this.xForHour(reading.hour, plot);
+    const y = this.yForValue(reading.value, plot);
     graphics.lineStyle(2, Palette.gold, 0.36);
     this.drawDashedVerticalLine(graphics, x, y + 10 * scale, plot.bottom, 6 * scale, 5 * scale);
     graphics.lineStyle(3, Palette.gold, 0.55);
@@ -345,15 +389,15 @@ export class DoTimelineChart {
     graphics.fillStyle(Palette.gold, 1);
     graphics.fillCircle(x, y, 5 * scale);
 
-    const time = this.formatHour(this.manualReading.hour);
-    const label = `${this.copy.sampleLabel}  ${time} · ${this.manualReading.value.toFixed(1)} mg/L`;
+    const time = this.formatHour(reading.hour);
+    const label = `${this.copy.sampleLabel}  ${time} · ${reading.value.toFixed(1)} mg/L`;
     this.addText(
       Phaser.Math.Clamp(x, plot.left + 95 * scale, plot.right - 95 * scale),
       y - 14 * scale,
       label,
       {
         fontFamily: TEXT_FONT,
-        fontSize: `${Math.round(12 * scale)}px`,
+        fontSize: `${Math.round(14 * scale)}px`,
         color: '#ffe28b',
         fontStyle: 'bold',
         backgroundColor: '#332b18ee',
@@ -367,26 +411,31 @@ export class DoTimelineChart {
     plot: PlotRect,
     scale: number,
   ): void {
-    const points = this.continuousReadings.map(
-      (reading) =>
-        new Phaser.Math.Vector2(
-          this.xForHour(reading.hour, plot),
-          this.yForValue(reading.value, plot),
-        ),
-    );
-    const first = points[0];
-    const last = points[points.length - 1];
+    this.drawSignalGaps(graphics, plot, scale);
+    const segments = splitDoReadingsAtGaps(this.continuousReadings, this.continuousGaps);
 
-    if (first !== undefined && last !== undefined) {
-      graphics.fillStyle(Palette.accent, 0.11);
-      graphics.fillPoints(
-        [
-          new Phaser.Math.Vector2(first.x, plot.bottom),
-          ...points,
-          new Phaser.Math.Vector2(last.x, plot.bottom),
-        ],
-        true,
+    segments.forEach((segment) => {
+      const points = segment.map(
+        (reading) =>
+          new Phaser.Math.Vector2(
+            this.xForHour(reading.hour, plot),
+            this.yForValue(reading.value, plot),
+          ),
       );
+      const first = points[0];
+      const last = points.at(-1);
+      if (first === undefined || last === undefined) return;
+      graphics.fillStyle(Palette.accent, 0.11);
+      if (points.length > 1) {
+        graphics.fillPoints(
+          [
+            new Phaser.Math.Vector2(first.x, plot.bottom),
+            ...points,
+            new Phaser.Math.Vector2(last.x, plot.bottom),
+          ],
+          true,
+        );
+      }
       graphics.lineStyle(Math.max(2, 3 * scale), Palette.accentSoft, 1);
       graphics.beginPath();
       graphics.moveTo(first.x, first.y);
@@ -395,7 +444,7 @@ export class DoTimelineChart {
         if (point !== undefined) graphics.lineTo(point.x, point.y);
       }
       graphics.strokePath();
-    }
+    });
 
     this.continuousReadings.forEach((reading) => {
       const x = this.xForHour(reading.hour, plot);
@@ -433,7 +482,7 @@ export class DoTimelineChart {
       `${this.copy.detectedLabel}\n${this.formatHour(minimum.hour)} · ${minimum.value.toFixed(1)} mg/L`,
       {
         fontFamily: TEXT_FONT,
-        fontSize: `${Math.round(12 * scale)}px`,
+        fontSize: `${Math.round(14 * scale)}px`,
         color: '#ffd7cd',
         fontStyle: 'bold',
         lineSpacing: Math.round(2 * scale),
@@ -449,16 +498,48 @@ export class DoTimelineChart {
       this.mode === 'manual'
         ? this.copy.manualHint
         : this.mode === 'continuous'
-          ? this.copy.continuousHint
+          ? this.continuousGaps.length > 0
+            ? this.copy.signalGapHint
+            : this.copy.continuousHint
           : '';
     if (text === '') return;
     this.addText(width / 2, height - 8 * scale, text, {
       fontFamily: TEXT_FONT,
-      fontSize: `${Math.round(13 * scale)}px`,
-      color: this.mode === 'continuous' ? '#aaf2bb' : '#f4d678',
+      fontSize: `${Math.round(15 * scale)}px`,
+      color: this.mode === 'continuous' && this.continuousGaps.length === 0 ? '#aaf2bb' : '#f4d678',
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5, 1);
+  }
+
+  private drawSignalGaps(
+    graphics: Phaser.GameObjects.Graphics,
+    plot: PlotRect,
+    scale: number,
+  ): void {
+    this.continuousGaps.forEach(({ fromHour, toHour }) => {
+      const left = this.xForHour(fromHour, plot);
+      const right = this.xForHour(toHour, plot);
+      graphics.fillStyle(Palette.gold, 0.13);
+      graphics.fillRect(left, plot.top, right - left, plot.height);
+      graphics.lineStyle(2, Palette.gold, 0.22);
+      const spacing = 15 * scale;
+      for (let x = left - plot.height; x < right; x += spacing) {
+        const startX = Math.max(left, x);
+        const startY = plot.bottom - Math.max(0, left - x);
+        const travel = Math.min(right - startX, startY - plot.top);
+        if (travel > 0) graphics.lineBetween(startX, startY, startX + travel, startY - travel);
+      }
+      this.addText((left + right) / 2, plot.top + 12 * scale, this.copy.signalGapLabel, {
+        fontFamily: TEXT_FONT,
+        fontSize: `${Math.round(14 * scale)}px`,
+        color: '#ffe28b',
+        fontStyle: 'bold',
+        backgroundColor: '#332b18ee',
+        padding: { x: Math.round(6 * scale), y: Math.round(3 * scale) },
+        align: 'center',
+      }).setOrigin(0.5, 0);
+    });
   }
 
   private addText(

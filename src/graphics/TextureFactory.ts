@@ -76,6 +76,107 @@ export function ensureEdgeTransparentTexture(
   return true;
 }
 
+interface VisibleTextureBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * Crops every frame to its visible pixels and scales the animal to one stable
+ * body width. Source animation sheets often leave different amounts of empty
+ * canvas around each frame; playing those frames at one canvas scale makes an
+ * animal appear to grow and shrink. These normalized canvases keep the body
+ * centred and the same apparent size while preserving fin and gill motion.
+ */
+export function ensureNormalizedTextureSequence(
+  scene: Phaser.Scene,
+  sourceKeys: readonly string[],
+  outputSuffix = 'body-normalized',
+): readonly string[] {
+  const keys = sourceKeys.filter((key) => scene.textures.exists(key));
+  if (keys.length === 0 || typeof document === 'undefined') return keys;
+
+  const outputKeys = keys.map((key) => `${key}-${outputSuffix}`);
+  if (outputKeys.every((key) => scene.textures.exists(key))) return outputKeys;
+
+  const readBounds = (source: CanvasImageSource, width: number, height: number): VisibleTextureBounds => {
+    const scratch = document.createElement('canvas');
+    scratch.width = width;
+    scratch.height = height;
+    const context = scratch.getContext('2d', { willReadFrequently: true });
+    if (context === null) return { x: 0, y: 0, width, height };
+    context.clearRect(0, 0, width, height);
+    context.drawImage(source, 0, 0, width, height);
+    const pixels = context.getImageData(0, 0, width, height).data;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = pixels[(y * width + x) * 4 + 3] ?? 0;
+        if (alpha < 10) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+    if (maxX < minX || maxY < minY) return { x: 0, y: 0, width, height };
+    return {
+      x: minX,
+      y: minY,
+      width: maxX - minX + 1,
+      height: maxY - minY + 1,
+    };
+  };
+
+  const frames = keys.map((key) => {
+    const source = scene.textures.get(key).getSourceImage() as CanvasImageSource & {
+      readonly width: number;
+      readonly height: number;
+      readonly naturalWidth?: number;
+      readonly naturalHeight?: number;
+    };
+    const width = source.naturalWidth || source.width;
+    const height = source.naturalHeight || source.height;
+    return { source, bounds: readBounds(source, width, height) };
+  });
+  const visibleWidth = 420;
+  const padding = 8;
+  const scaledHeights = frames.map(
+    ({ bounds }) => (bounds.height * visibleWidth) / Math.max(1, bounds.width),
+  );
+  const canvasWidth = visibleWidth + padding * 2;
+  const canvasHeight = Math.ceil(Math.max(...scaledHeights)) + padding * 2;
+
+  frames.forEach(({ source, bounds }, index) => {
+    const outputKey = outputKeys[index];
+    if (outputKey === undefined || scene.textures.exists(outputKey)) return;
+    const canvasTexture = scene.textures.createCanvas(outputKey, canvasWidth, canvasHeight);
+    if (canvasTexture === null) return;
+    const context = canvasTexture.getContext();
+    const scaledHeight = scaledHeights[index] ?? canvasHeight - padding * 2;
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    context.drawImage(
+      source,
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      padding,
+      (canvasHeight - scaledHeight) / 2,
+      visibleWidth,
+      scaledHeight,
+    );
+    canvasTexture.refresh();
+  });
+
+  return outputKeys.filter((key) => scene.textures.exists(key));
+}
+
 /**
  * Vector textures are authored in compact design units then baked at TEX_SCALE×
  * so they display crisply in the 1920×1080 design space without upscaling.

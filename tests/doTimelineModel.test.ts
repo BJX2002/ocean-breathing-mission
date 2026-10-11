@@ -3,6 +3,7 @@ import {
   DEFAULT_DAWN_DIP_SERIES,
   findLowestDoReading,
   normalizeDoReadings,
+  splitDoReadingsAtGaps,
 } from '../src/ui/DoTimelineModel';
 
 describe('DO timeline teaching data', () => {
@@ -31,5 +32,19 @@ describe('DO timeline teaching data', () => {
   it('ignores non-finite data and handles an empty series', () => {
     expect(normalizeDoReadings([{ hour: Number.NaN, value: 3 }])).toEqual([]);
     expect(findLowestDoReading([])).toBeNull();
+  });
+
+  it('splits a line around a missing signal interval instead of drawing through it', () => {
+    const readings = [
+      { hour: 6, value: 4.8 },
+      { hour: 8, value: 5.1 },
+      { hour: 14, value: 5.9 },
+      { hour: 16, value: 5.7 },
+    ];
+
+    expect(splitDoReadingsAtGaps(readings, [{ fromHour: 9, toHour: 13 }])).toEqual([
+      readings.slice(0, 2),
+      readings.slice(2),
+    ]);
   });
 });

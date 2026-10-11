@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
+import { getHabitatFloorY } from '../config/constants';
 import { eventBus } from '../events/EventBus';
-import { ensureEdgeTransparentTexture } from '../graphics/TextureFactory';
+import {
+  ensureEdgeTransparentTexture,
+  ensureNormalizedTextureSequence,
+} from '../graphics/TextureFactory';
 import { getCreatureFramePlan } from '../scenes/OpeningModel';
 import type { SurveySubjectPlacement, SurveySubjectVisual } from '../types';
 
@@ -15,12 +19,13 @@ interface FishStatusLayout {
 }
 
 const FISH_STATUS_LAYOUTS: Readonly<Record<string, FishStatusLayout>> = {
-  // The supplied blue damselfish frame faces right.
-  'blue-damselfish': { headDirection: 1, headEdgeX: 46, restingY: -50 },
-  // The other supplied fish frames face left.
+  // The replacement blue-fish frames face left.
+  'blue-damselfish': { headDirection: -1, headEdgeX: 46, restingY: -50 },
+  // The grouper and goby frames also face left.
   'reef-grouper': { headDirection: -1, headEdgeX: 69, restingY: -48 },
   'hardy-goby': { headDirection: -1, headEdgeX: 60, restingY: -49 },
-  'silver-reef-fish': { headDirection: -1, headEdgeX: 66, restingY: -55 },
+  // The replacement silver-fish frames face right.
+  'silver-reef-fish': { headDirection: 1, headEdgeX: 66, restingY: -55 },
 };
 
 export interface SurveyInteraction {
@@ -28,7 +33,14 @@ export interface SurveyInteraction {
   readonly tool: 'camera';
 }
 
-type SubjectVisualObject = Phaser.GameObjects.Graphics | Phaser.GameObjects.Image | Phaser.GameObjects.Container;
+type SubjectVisualObject =
+  Phaser.GameObjects.Graphics | Phaser.GameObjects.Image | Phaser.GameObjects.Container;
+
+interface AnimatedFrameSprite {
+  readonly sprite: Phaser.GameObjects.Image;
+  readonly phaseMs: number;
+  frameIndex: number;
+}
 
 /**
  * The supplied animation frames use square canvases. One target size per
@@ -36,15 +48,20 @@ type SubjectVisualObject = Phaser.GameObjects.Graphics | Phaser.GameObjects.Imag
  * size differences between the organisms.
  */
 const CREATURE_DISPLAY_SIZES: Readonly<Record<string, number>> = {
-  // The diver occupies roughly 176 px in the design space. Keep the two
-  // schooling fish below that silhouette, while giving the slower, bottom-
-  // dwelling subjects enough visual weight to read as real observations.
-  'blue-damselfish': 68,
-  'hardy-goby': 96,
+  // Keep swimming fish at 80% of the previous presentation size so the
+  // enlarged diver remains the clearest player-controlled subject.
+  'blue-damselfish': 77,
+  'hardy-goby': 90,
   'reef-grouper': 118,
-  'silver-reef-fish': 76,
+  'silver-reef-fish': 82,
   'sea-cucumber': 112,
   'tube-sponge': 110,
+};
+
+/** Approximate visible half-heights used to sit non-swimming subjects on sand. */
+const GROUNDED_VISIBLE_HALF_HEIGHTS: Readonly<Record<string, number>> = {
+  'sea-cucumber': 18,
+  'tube-sponge': 48,
 };
 
 /**
@@ -59,11 +76,13 @@ export class SurveySubject {
   private readonly label: Phaser.GameObjects.Text;
   private readonly status: Phaser.GameObjects.Text;
   private readonly visual: SubjectVisualObject;
-  private frameSprite: Phaser.GameObjects.Image | null = null;
+  private readonly frameSprites: AnimatedFrameSprite[] = [];
   private frameKeys: readonly string[] = [];
   private frameDurationMs = 0;
-  private frameIndex = 0;
   private readonly isFish: boolean;
+  private readonly isGrounded: boolean;
+  private readonly worldX: number;
+  private readonly worldY: number;
   private readonly displayName: string;
   private focused = false;
   private guided = false;
@@ -77,10 +96,16 @@ export class SurveySubject {
   ) {
     this.displayName = label;
     this.isFish = data.visual === 'school' || data.visual === 'goby';
-    this.root = scene.add.container(data.x, data.y).setDepth(8);
-    this.aura = scene.add.circle(0, 0, 92, 0x3fd0c9, 0.07).setVisible(false);
+    this.isGrounded = data.depthZone === 'bottom' && !this.isFish;
+    this.worldX = data.x;
+    this.worldY = this.isGrounded
+      ? getHabitatFloorY(data.x) - (GROUNDED_VISIBLE_HALF_HEIGHTS[data.speciesId] ?? 28)
+      : data.y;
+    this.root = scene.add.container(this.worldX, this.worldY).setDepth(8);
+    const focusRadius = this.isFish ? 92 : 78;
+    this.aura = scene.add.circle(0, 0, focusRadius + 18, 0x3fd0c9, 0.07).setVisible(false);
     this.ring = scene.add
-      .circle(0, 0, 78, 0x3fd0c9, 0)
+      .circle(0, 0, focusRadius, 0x3fd0c9, 0)
       .setStrokeStyle(3, 0x9cf7ef, 0.85)
       .setVisible(false);
     this.visual = this.createVisual(data.visual);
@@ -152,7 +177,7 @@ export class SurveySubject {
   }
 
   get position(): { x: number; y: number } {
-    return { x: this.data.x, y: this.data.y };
+    return { x: this.worldX, y: this.worldY };
   }
 
   get hasPhoto(): boolean {
@@ -165,16 +190,22 @@ export class SurveySubject {
 
   setGuidedTarget(guided: boolean): void {
     this.guided = guided && !this.photoRecorded;
-    if (!this.focused) {
-      this.aura.setVisible(this.guided).setFillStyle(0xf0c95a, 0.035);
-      this.ring
-        .setVisible(this.guided)
-        .setStrokeStyle(2, 0xf0c95a, this.guided ? 0.48 : 0);
+    if (this.guided) {
+      // A newly activated organism may already be inside the diver's focus
+      // radius when the station photo closes. Apply the mission-yellow style
+      // immediately instead of waiting for the player to swim away and back.
+      this.aura.setVisible(true).setFillStyle(0xf0c95a, 0.055);
+      this.ring.setVisible(true).setStrokeStyle(4, 0xf0c95a, 0.9);
+      this.label.setVisible(true).setColor('#fff3a8').setBackgroundColor('#4b3b13dd');
+    } else if (!this.focused) {
+      this.aura.setVisible(false);
+      this.ring.setVisible(false);
+      this.label.setVisible(false);
     }
   }
 
   updateFocus(diverX: number, diverY: number): boolean {
-    const distance = Phaser.Math.Distance.Between(diverX, diverY, this.data.x, this.data.y);
+    const distance = Phaser.Math.Distance.Between(diverX, diverY, this.worldX, this.worldY);
     const focused = distance <= OBSERVATION_RADIUS;
     const discoveredNow = focused && !this.focused;
     const now = this.scene.time.now;
@@ -189,13 +220,18 @@ export class SurveySubject {
 
     this.aura
       .setVisible(focused || this.guided)
-      .setFillStyle(focused ? 0x3fd0c9 : 0xf0c95a, focused ? 0.07 : 0.035);
+      .setFillStyle(
+        this.guided ? 0xf0c95a : 0x3fd0c9,
+        this.guided ? 0.055 : focused ? 0.07 : 0.035,
+      );
     this.ring.setVisible(focused || this.guided);
-    this.label.setVisible(focused);
-    if (focused) {
+    this.label.setVisible(focused || this.guided);
+    if (this.guided) {
+      this.label.setColor('#fff3a8').setBackgroundColor('#4b3b13dd');
+      this.ring.setStrokeStyle(4, 0xf0c95a, 0.9);
+    } else if (focused) {
+      this.label.setColor('#e6f7ff').setBackgroundColor('#04121fcc');
       this.ring.setStrokeStyle(3, this.photoRecorded ? 0x9aa8b8 : 0x9cf7ef, 0.85);
-    } else if (this.guided) {
-      this.ring.setStrokeStyle(2, 0xf0c95a, 0.48);
     }
 
     if (this.isFish) {
@@ -221,17 +257,15 @@ export class SurveySubject {
       // communicates fast startled swimming versus slow resting movement.
       const speed = alert ? 0.0062 : focused ? 0.00125 : 0.0022;
       const amplitude = alert ? 20 : focused ? 4 : 10;
-      this.root.x = this.data.x + Math.sin(now * speed + this.data.x) * amplitude;
-      this.visual.setAngle(
-        Math.sin(now * speed * 0.84 + this.data.x) * (alert ? 4.5 : 2.2),
-      );
+      this.root.x = this.worldX + Math.sin(now * speed + this.worldX) * amplitude;
+      this.visual.setAngle(Math.sin(now * speed * 0.84 + this.worldX) * (alert ? 4.5 : 2.2));
     }
 
     return discoveredNow;
   }
 
   tryPhotograph(diverX: number, diverY: number): SurveyInteraction | null {
-    const distance = Phaser.Math.Distance.Between(diverX, diverY, this.data.x, this.data.y);
+    const distance = Phaser.Math.Distance.Between(diverX, diverY, this.worldX, this.worldY);
     if (distance > OBSERVATION_RADIUS) return null;
     if (this.photoRecorded) return null;
 
@@ -259,7 +293,14 @@ export class SurveySubject {
         [12, -31, 0.62],
       ] as const) {
         g.fillEllipse(x, y, 42 * scale, 22 * scale);
-        g.fillTriangle(x - 22 * scale, y, x - 36 * scale, y - 12 * scale, x - 36 * scale, y + 12 * scale);
+        g.fillTriangle(
+          x - 22 * scale,
+          y,
+          x - 36 * scale,
+          y - 12 * scale,
+          x - 36 * scale,
+          y + 12 * scale,
+        );
         g.fillStyle(0x7be0dc, 0.75);
         g.fillCircle(x + 10 * scale, y - 3 * scale, 2.5 * scale);
         g.fillStyle(0xf0c95a, 0.95);
@@ -331,38 +372,51 @@ export class SurveySubject {
   private createAssetVisual(): SubjectVisualObject | null {
     const plan = getCreatureFramePlan(this.data.speciesId);
     if (plan !== null) {
-      const frameKeys = plan.indices.flatMap((index) => {
+      const preparedFrameKeys = plan.indices.flatMap((index) => {
         const indexLabel = String(index).padStart(2, '0');
         const sourceKey = `chapter1-subject-${this.data.speciesId}-frame-${indexLabel}`;
         if (!this.scene.textures.exists(sourceKey)) return [];
-        if (this.data.speciesId !== 'tube-sponge') return [sourceKey];
+        if (
+          this.data.speciesId !== 'tube-sponge' &&
+          this.data.speciesId !== 'blue-damselfish' &&
+          this.data.speciesId !== 'silver-reef-fish'
+        ) {
+          return [sourceKey];
+        }
 
-        const transparentKey = `${sourceKey}-transparent`;
-        return ensureEdgeTransparentTexture(this.scene, sourceKey, transparentKey) && this.scene.textures.exists(transparentKey)
+        const transparentKey = `${sourceKey}-edge-transparent`;
+        return ensureEdgeTransparentTexture(this.scene, sourceKey, transparentKey) &&
+          this.scene.textures.exists(transparentKey)
           ? [transparentKey]
           : [];
       });
+      const frameKeys = ensureNormalizedTextureSequence(
+        this.scene,
+        preparedFrameKeys,
+        `${this.data.speciesId}-stable-body`,
+      );
       if (frameKeys.length > 0) {
         const targetSize = CREATURE_DISPLAY_SIZES[this.data.speciesId] ?? 112;
         const source = this.scene.textures.get(frameKeys[0]!).getSourceImage();
         const scale = targetSize / Math.max(source.width, source.height);
         const sprite = this.scene.add.image(0, 0, frameKeys[0]!).setScale(scale);
         const container = this.scene.add.container(0, 0, [sprite]);
+        this.frameSprites.push({ sprite, phaseMs: 0, frameIndex: -1 });
         if (this.data.visual === 'school') {
           for (const [x, y, relativeScale, phase] of [
             [-30, -8, 0.58, 0],
             [30, 12, 0.48, 500],
-            [8, -26, 0.40, 900],
+            [8, -26, 0.4, 900],
           ] as const) {
             const schoolmate = this.scene.add
               .image(x, y, frameKeys[0]!)
               .setScale(scale * relativeScale)
               .setAlpha(0.88);
             container.add(schoolmate);
+            this.frameSprites.push({ sprite: schoolmate, phaseMs: phase, frameIndex: -1 });
             this.scene.tweens.add({
               targets: schoolmate,
               y: { from: y - 4, to: y + 4 },
-              x: { from: x - 8, to: x + 8 },
               duration: 1800 + phase,
               yoyo: true,
               repeat: -1,
@@ -370,7 +424,6 @@ export class SurveySubject {
             });
           }
         }
-        this.frameSprite = sprite;
         this.frameKeys = frameKeys;
         this.frameDurationMs = plan.frameDurationMs;
         return container;
@@ -388,10 +441,15 @@ export class SurveySubject {
   }
 
   private updateFrameAnimation(now: number): void {
-    if (this.frameSprite === null || this.frameKeys.length < 2 || this.frameDurationMs <= 0) return;
-    const nextIndex = Math.floor(now / this.frameDurationMs) % this.frameKeys.length;
-    if (nextIndex === this.frameIndex) return;
-    this.frameIndex = nextIndex;
-    this.frameSprite.setTexture(this.frameKeys[nextIndex]!);
+    if (this.frameSprites.length === 0 || this.frameKeys.length < 2 || this.frameDurationMs <= 0) {
+      return;
+    }
+    for (const animated of this.frameSprites) {
+      const nextIndex =
+        Math.floor((now + animated.phaseMs) / this.frameDurationMs) % this.frameKeys.length;
+      if (nextIndex === animated.frameIndex) continue;
+      animated.frameIndex = nextIndex;
+      animated.sprite.setTexture(this.frameKeys[nextIndex]!);
+    }
   }
 }

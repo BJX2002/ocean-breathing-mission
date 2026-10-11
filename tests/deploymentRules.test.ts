@@ -2,15 +2,21 @@ import { describe, expect, it } from 'vitest';
 import sensorsData from '../src/data/sensors.json';
 import {
   DEMO_DEPLOYMENT_SCENARIO,
+  DEMO_FIXED_PROBE_SIGNAL_GAP,
   DEMO_LOW_OXYGEN_THRESHOLD_MG_L,
   DEPLOYMENT_DATA_BASIS,
+  createDeploymentRunSnapshot,
+  demoSensorHasSignalAtHour,
   demoDoValueAtGridIndex,
   deploymentCost,
   evaluateDeployment,
   gridPlacement,
   placementCoversEvent,
+  providesCompleteDayRecord,
   providesContinuousCoverage,
+  repairCost,
   sensorSupportsDepth,
+  totalDeploymentCost,
   type DeploymentPlacement,
 } from '../src/simulation/DeploymentRules';
 import type { Sensor } from '../src/types';
@@ -37,9 +43,12 @@ function at(
 }
 
 describe('deployment device rules', () => {
-  it('uses purchase plus maintenance as the DEMO round cost', () => {
-    expect(deploymentCost(sensingFilm)).toBe(660);
-    expect(deploymentCost(fixedProbe)).toBe(1700);
+  it('uses clear teaching prices and charges repairs separately', () => {
+    expect(deploymentCost(vessel)).toBe(2100);
+    expect(deploymentCost(sensingFilm)).toBe(350);
+    expect(deploymentCost(fixedProbe)).toBe(420);
+    expect(repairCost(fixedProbe)).toBe(120);
+    expect(repairCost(sensingFilm)).toBe(0);
   });
 
   it('does not treat vessel or handheld readings as continuous coverage', () => {
@@ -52,27 +61,31 @@ describe('deployment device rules', () => {
       eventPoint: { locationId: 'raft', depthZone: 'mid', timeOfDay: 'dawn' },
     });
 
-    expect(vesselResult.goals.continuousRecording).toBe(false);
-    expect(vesselResult.goals.eventDetected).toBe(false);
+    expect(vesselResult.goals.completeDataAtAllPoints).toBe(false);
     expect(handheldResult.operationalPlacementCount).toBe(1);
-    expect(handheldResult.goals.continuousRecording).toBe(false);
-    expect(handheldResult.goals.eventDetected).toBe(false);
+    expect(handheldResult.goals.completeDataAtAllPoints).toBe(false);
   });
 
-  it('lets a supported continuous fixed probe or sensing-film node detect the dawn event', () => {
+  it('distinguishes continuous output from a complete uninterrupted record', () => {
+    expect(providesContinuousCoverage(fixedProbe)).toBe(true);
+    expect(providesCompleteDayRecord(fixedProbe)).toBe(false);
+    expect(providesCompleteDayRecord(sensingFilm)).toBe(true);
+  });
+
+  it('lets a supported continuous fixed probe or sensing-film node cover the event point', () => {
     for (const device of [fixedProbe, sensingFilm]) {
       const placement = at('raft', 'bottom', device);
       expect(placementCoversEvent(placement, DEMO_DEPLOYMENT_SCENARIO.eventPoint)).toBe(true);
-      expect(evaluateDeployment([placement]).goals.eventDetected).toBe(true);
     }
   });
 
   it('misses the event at the wrong location or depth', () => {
-    const wrongLocation = evaluateDeployment([at('inner', 'bottom', sensingFilm)]);
-    const wrongDepth = evaluateDeployment([at('raft', 'mid', sensingFilm)]);
-
-    expect(wrongLocation.goals.eventDetected).toBe(false);
-    expect(wrongDepth.goals.eventDetected).toBe(false);
+    expect(
+      placementCoversEvent(at('inner', 'bottom', sensingFilm), DEMO_DEPLOYMENT_SCENARIO.eventPoint),
+    ).toBe(false);
+    expect(
+      placementCoversEvent(at('raft', 'mid', sensingFilm), DEMO_DEPLOYMENT_SCENARIO.eventPoint),
+    ).toBe(false);
   });
 
   it('enforces each sensor maximum depth', () => {
@@ -86,53 +99,57 @@ describe('deployment device rules', () => {
 });
 
 describe('deployment coverage goals', () => {
-  const successfulFilmNetwork: readonly DeploymentPlacement[] = [
-    at('entrance', 'surface', sensingFilm),
-    at('raft', 'bottom', sensingFilm),
-    at('inner', 'mid', sensingFilm),
-  ];
+  const allNine = (device: Sensor): readonly DeploymentPlacement[] =>
+    ['entrance', 'raft', 'inner'].flatMap((locationId) =>
+      (['surface', 'mid', 'bottom'] as const).map((depthZone) => at(locationId, depthZone, device)),
+    );
+  const successfulFilmNetwork = allNine(sensingFilm);
 
-  it('requires continuous coverage at all three locations, at least two depths, the event, and budget', () => {
+  it('passes only when all nine points have complete data within budget', () => {
     const result = evaluateDeployment(successfulFilmNetwork);
 
     expect(result.dataBasis).toBe(DEPLOYMENT_DATA_BASIS);
-    expect(result.totalCost).toBe(1980);
-    expect(result.remainingBudget).toBe(1620);
+    expect(result.totalCost).toBe(3150);
+    expect(result.remainingBudget).toBe(450);
+    expect(result.coveredPointCount).toBe(9);
+    expect(result.completePointCount).toBe(9);
     expect(result.goals).toEqual({
-      continuousRecording: true,
-      allLocationsCovered: true,
-      multipleDepthsCovered: true,
-      eventDetected: true,
+      allPointsCovered: true,
+      completeDataAtAllPoints: true,
       withinBudget: true,
     });
     expect(result.success).toBe(true);
   });
 
-  it('does not pass when a location or the second depth zone is missing', () => {
-    const result = evaluateDeployment([
-      at('entrance', 'bottom', sensingFilm),
-      at('raft', 'bottom', sensingFilm),
-    ]);
+  it('does not pass when even one of the nine points is missing', () => {
+    const result = evaluateDeployment([...successfulFilmNetwork.slice(0, 8)]);
 
-    expect(result.goals.continuousRecording).toBe(true);
-    expect(result.goals.allLocationsCovered).toBe(false);
-    expect(result.goals.multipleDepthsCovered).toBe(false);
+    expect(result.coveredPointCount).toBe(8);
+    expect(result.completePointCount).toBe(8);
+    expect(result.goals.allPointsCovered).toBe(false);
+    expect(result.goals.completeDataAtAllPoints).toBe(false);
     expect(result.success).toBe(false);
   });
 
-  it('fails an otherwise complete fixed-probe network when it exceeds the DEMO budget', () => {
-    const result = evaluateDeployment([
-      at('entrance', 'surface', fixedProbe),
-      at('raft', 'bottom', fixedProbe),
-      at('inner', 'mid', fixedProbe),
-    ]);
+  it('fails a nine-point fixed-probe network for gaps and budget', () => {
+    const result = evaluateDeployment(allNine(fixedProbe));
 
-    expect(result.totalCost).toBe(5100);
-    expect(result.goals.continuousRecording).toBe(true);
-    expect(result.goals.allLocationsCovered).toBe(true);
-    expect(result.goals.multipleDepthsCovered).toBe(true);
+    expect(result.totalCost).toBe(3780);
+    expect(result.goals.allPointsCovered).toBe(true);
+    expect(result.goals.completeDataAtAllPoints).toBe(false);
     expect(result.goals.withinBudget).toBe(false);
-    expect(result.goals.eventDetected).toBe(false);
+    expect(result.success).toBe(false);
+  });
+
+  it('charges one vessel visit once while covering all three depths in its column', () => {
+    const vesselColumn = ['surface', 'mid', 'bottom'].map((depthZone) =>
+      at('raft', depthZone as DeploymentPlacement['depthZone'], vessel),
+    );
+
+    expect(totalDeploymentCost(vesselColumn)).toBe(2100);
+    const result = evaluateDeployment(vesselColumn);
+    expect(result.coveredPointCount).toBe(3);
+    expect(result.completePointCount).toBe(0);
     expect(result.success).toBe(false);
   });
 
@@ -161,5 +178,72 @@ describe('deployment coverage goals', () => {
       depthZone: DEMO_DEPLOYMENT_SCENARIO.eventPoint.depthZone,
     });
     expect(demoDoValueAtGridIndex(9, 5)).toBeNull();
+  });
+});
+
+describe('24-hour deployment run snapshots', () => {
+  it('records one 14:00 point for a vessel and never fills the missing hours', () => {
+    const snapshot = createDeploymentRunSnapshot([at('raft', 'bottom', vessel)]);
+    const cell = snapshot.cells[7];
+
+    expect(cell?.mode).toBe('manual');
+    expect(cell?.readings).toHaveLength(1);
+    expect(cell?.readings[0]).toEqual({
+      hour: 14,
+      value: demoDoValueAtGridIndex(7, 14),
+    });
+    expect(snapshot.eventDetected).toBe(false);
+    expect(snapshot.success).toBe(false);
+  });
+
+  it('records a real 24-hour series only in continuously monitored cells', () => {
+    const snapshot = createDeploymentRunSnapshot([
+      at('entrance', 'surface', sensingFilm),
+      at('raft', 'bottom', sensingFilm),
+    ]);
+    const surface = snapshot.cells[0];
+    const eventCell = snapshot.cells[7];
+
+    expect(surface?.mode).toBe('continuous');
+    expect(surface?.readings).toHaveLength(14);
+    expect(eventCell?.mode).toBe('continuous');
+    expect(eventCell?.readings.find(({ hour }) => hour === 5)?.value).toBe(
+      demoDoValueAtGridIndex(7, 5),
+    );
+    expect(eventCell?.lowOxygenDetected).toBe(true);
+    expect(snapshot.eventDetected).toBe(true);
+  });
+
+  it('keeps unmonitored near-bed cells empty instead of revealing hidden curves', () => {
+    const snapshot = createDeploymentRunSnapshot([at('raft', 'surface', fixedProbe)]);
+    const nearBedCells = snapshot.cells.filter(({ depthZone }) => depthZone === 'bottom');
+
+    expect(nearBedCells).toHaveLength(3);
+    expect(nearBedCells.every(({ mode }) => mode === 'unmonitored')).toBe(true);
+    expect(nearBedCells.every(({ readings }) => readings.length === 0)).toBe(true);
+    expect(snapshot.eventDetected).toBe(false);
+  });
+
+  it('reports a detected event even when the overall plan fails another goal', () => {
+    const snapshot = createDeploymentRunSnapshot([at('raft', 'bottom', fixedProbe)]);
+
+    expect(snapshot.eventDetected).toBe(true);
+    expect(snapshot.evaluation.goals.allPointsCovered).toBe(false);
+    expect(snapshot.evaluation.goals.completeDataAtAllPoints).toBe(false);
+    expect(snapshot.success).toBe(false);
+  });
+
+  it('models a fixed-probe signal gap without turning missing values into zeroes', () => {
+    const fixedSnapshot = createDeploymentRunSnapshot([at('raft', 'bottom', fixedProbe)]);
+    const filmSnapshot = createDeploymentRunSnapshot([at('raft', 'bottom', sensingFilm)]);
+    const fixedCell = fixedSnapshot.cells[7];
+    const filmCell = filmSnapshot.cells[7];
+
+    expect(fixedCell?.signalGaps).toEqual([DEMO_FIXED_PROBE_SIGNAL_GAP]);
+    expect(fixedCell?.readings.some(({ hour }) => hour === 10 || hour === 12)).toBe(false);
+    expect(fixedCell?.readings.every(({ value }) => value > 0)).toBe(true);
+    expect(demoSensorHasSignalAtHour(fixedProbe, 11)).toBe(false);
+    expect(filmCell?.signalGaps).toEqual([]);
+    expect(filmCell?.readings).toHaveLength(14);
   });
 });

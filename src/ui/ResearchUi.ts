@@ -52,6 +52,7 @@ export function createResearchSurface(
 export interface ResearchButtonOptions {
   readonly tone?: ResearchButtonTone;
   readonly fontSize?: number;
+  readonly lineSpacing?: number;
   readonly depth?: number;
   readonly radius?: number;
   readonly onPress?: () => void;
@@ -62,13 +63,15 @@ export class ResearchButton {
   public readonly root: Phaser.GameObjects.Container;
   public readonly label: Phaser.GameObjects.Text;
 
+  private readonly glow: Phaser.GameObjects.Graphics;
   private readonly background: Phaser.GameObjects.Graphics;
   private readonly hitArea: Phaser.GameObjects.Rectangle;
+  private pulseTween: Phaser.Tweens.Tween | null = null;
   private enabled = true;
   private tone: ResearchButtonTone;
 
   constructor(
-    scene: Phaser.Scene,
+    private readonly scene: Phaser.Scene,
     x: number,
     y: number,
     private readonly width: number,
@@ -78,6 +81,7 @@ export class ResearchButton {
   ) {
     this.tone = options.tone ?? 'secondary';
     this.root = scene.add.container(x, y).setDepth(options.depth ?? 0).setSize(width, height);
+    this.glow = scene.add.graphics().setAlpha(0);
     this.background = scene.add.graphics();
     this.label = scene.add
       .text(0, 0, text, {
@@ -86,14 +90,16 @@ export class ResearchButton {
         color: Palette.textLight,
         fontStyle: 'bold',
         align: 'center',
+        lineSpacing: options.lineSpacing ?? 0,
         wordWrap: { width: width - 40, useAdvancedWrap: true },
       })
       .setOrigin(0.5);
     this.hitArea = scene.add
       .rectangle(0, 0, width, height, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
-    this.root.add([this.background, this.label, this.hitArea]);
+    this.root.add([this.glow, this.background, this.label, this.hitArea]);
     this.paint(false);
+    this.updatePulse();
 
     this.hitArea.on(Phaser.Input.Events.POINTER_OVER, () => {
       if (!this.enabled) return;
@@ -122,6 +128,7 @@ export class ResearchButton {
   public setTone(tone: ResearchButtonTone): this {
     this.tone = tone;
     this.paint(false);
+    this.updatePulse();
     return this;
   }
 
@@ -131,6 +138,7 @@ export class ResearchButton {
     if (enabled) this.hitArea.setInteractive({ useHandCursor: true });
     else this.hitArea.disableInteractive();
     this.paint(false);
+    this.updatePulse();
     return this;
   }
 
@@ -162,5 +170,35 @@ export class ResearchButton {
     this.background.fillRoundedRect(-this.width / 2, -this.height / 2, this.width, this.height, radius);
     this.background.lineStyle(2, borderByTone[this.tone], hovered ? 0.95 : 0.58);
     this.background.strokeRoundedRect(-this.width / 2, -this.height / 2, this.width, this.height, radius);
+
+    this.glow.clear();
+    if (this.tone === 'primary' && this.enabled) {
+      this.glow.lineStyle(5, 0xa4fff5, 0.72);
+      this.glow.strokeRoundedRect(
+        -this.width / 2 - 5,
+        -this.height / 2 - 5,
+        this.width + 10,
+        this.height + 10,
+        radius + 4,
+      );
+    }
+  }
+
+  /** Primary actions breathe gently so younger players can spot the next step. */
+  private updatePulse(): void {
+    this.pulseTween?.stop();
+    this.pulseTween = null;
+    this.glow.setScale(1).setAlpha(0);
+    if (this.tone !== 'primary' || !this.enabled) return;
+
+    this.pulseTween = this.scene.tweens.add({
+      targets: this.glow,
+      alpha: { from: 0.12, to: 0.72 },
+      scale: { from: 0.995, to: 1.035 },
+      duration: 760,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
   }
 }
