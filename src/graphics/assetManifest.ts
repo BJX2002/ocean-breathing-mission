@@ -38,10 +38,10 @@ export const CHAPTER2_SCIENTIST_FRAME_KEYS = [0, 8, 20, 26].map(
 );
 
 const CREATURE_FRAME_ASSETS: readonly ArtAsset[] = [
-  ...Array.from({ length: 7 }, (_, index): ArtAsset => ({
+  ...Array.from({ length: 31 }, (_, index): ArtAsset => ({
     type: 'image',
     key: `chapter1-subject-blue-damselfish-frame-${String(index).padStart(2, '0')}`,
-    url: `assets/chapter1/creatures/individual/subject-blue-damselfish_frames/_2026-08-15_204550___${String(index).padStart(2, '0')}.png`,
+    url: `assets/chapter1/creatures/individual/subject-blue-damselfish_frames/cc785829a8bcbd87a12dc72e388b91cf_${String(index).padStart(2, '0')}.png`,
   })),
   ...[0, 4, 8, 12, 16, 20, 24, 28].flatMap((index): ArtAsset[] => [
     {
@@ -57,7 +57,7 @@ const CREATURE_FRAME_ASSETS: readonly ArtAsset[] = [
     {
       type: 'image',
       key: `chapter1-subject-silver-reef-fish-frame-${String(index).padStart(2, '0')}`,
-      url: `assets/chapter1/creatures/individual/subject-silver-reef-fish_frames/_2026-08-15_214856___${String(index).padStart(2, '0')}.png`,
+      url: `assets/chapter1/creatures/individual/subject-silver-reef-fish_frames/6c624a4542f912f496960f13a2ea9f43_${String(index).padStart(2, '0')}.png`,
     },
   ]),
   ...[0, 6, 12, 18, 24, 30].map((index): ArtAsset => ({
@@ -111,7 +111,7 @@ const MOORING_ASSETS: readonly ArtAsset[] = [
 ];
 
 export const ART_MANIFEST: readonly ArtAsset[] = [
-  { type: 'image', key: 'chapter1-cover', url: 'assets/chapter1/Cover.png' },
+  { type: 'image', key: 'chapter1-cover', url: 'assets/chapter1/cover.png' },
   { type: 'image', key: 'chapter2-lab', url: 'assets/chapter2/lab.png' },
   {
     type: 'image',
@@ -141,9 +141,12 @@ export const ART_MANIFEST: readonly ArtAsset[] = [
   },
   { type: 'image', key: 'chapter1-seabed-tile', url: 'assets/chapter1/seabed-tile.png' },
   { type: 'image', key: 'chapter1-research-vessel', url: 'assets/chapter1/Vessel.png' },
-  { type: 'image', key: 'chapter1-old-s1', url: 'assets/chapter1/old/S1.png' },
-  { type: 'image', key: 'chapter1-old-s2', url: 'assets/chapter1/old/S2.png' },
-  { type: 'image', key: 'chapter1-old-s3', url: 'assets/chapter1/old/S3.png' },
+  { type: 'image', key: 'chapter1-old-s1', url: 'assets/chapter1/old/S1_OLD.png' },
+  { type: 'image', key: 'chapter1-old-s2', url: 'assets/chapter1/old/S2_OLD.png' },
+  { type: 'image', key: 'chapter1-old-s3', url: 'assets/chapter1/old/S3_OLD.png' },
+  { type: 'image', key: 'chapter1-new-s1', url: 'assets/chapter1/new/S1_NEW.png' },
+  { type: 'image', key: 'chapter1-new-s2', url: 'assets/chapter1/new/S2_NEW.png' },
+  { type: 'image', key: 'chapter1-new-s3', url: 'assets/chapter1/new/S3_NEW.png' },
   ...CHAPTER1_DIVER_FRAME_KEYS.map((key, index): ArtAsset => ({
     type: 'image',
     key,

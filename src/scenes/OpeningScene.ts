@@ -4,6 +4,7 @@ import { eventBus } from '../events/EventBus';
 import { i18n } from '../i18n/LocaleService';
 import { gameState } from '../state/GameState';
 import { experiencePreferences } from '../state/ExperiencePreferences';
+import { ensureEdgeTransparentTexture } from '../graphics/TextureFactory';
 import { createResearchSurface } from '../ui/ResearchUi';
 import {
   getOpeningVideoFile,
@@ -40,7 +41,7 @@ const PHOTO_HOTSPOTS: readonly (readonly PhotoHotspot[])[] = [
       recordKey: 'opening.hotspot.s1.summary.record',
       guideTitleKey: 'opening.guide.s1.title',
       guideBodyKey: 'opening.guide.s1.body',
-      guideTextureKey: 'chapter1-subject-blue-damselfish',
+      guideTextureKey: 'chapter1-subject-blue-damselfish-frame-00',
     },
   ],
   [
@@ -58,13 +59,15 @@ const PHOTO_HOTSPOTS: readonly (readonly PhotoHotspot[])[] = [
   [
     {
       id: 'summary',
-      x: 0.54,
-      y: 0.76,
+      // Place the clue on the prominent right-hand sea cucumber instead of
+      // the empty patch of seabed between the two foreground animals.
+      x: 0.7,
+      y: 0.82,
       reactionKey: 'opening.hotspot.s3.summary.reaction',
       recordKey: 'opening.hotspot.s3.summary.record',
       guideTitleKey: 'opening.guide.s3.title',
       guideBodyKey: 'opening.guide.s3.body',
-      guideTextureKey: 'chapter1-subject-silver-reef-fish',
+      guideTextureKey: 'chapter1-subject-sea-cucumber-frame-00',
     },
   ],
 ] as const;
@@ -110,6 +113,23 @@ export class OpeningScene extends Phaser.Scene {
 
   create(): void {
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
+    const diveDebugScreens = [
+      'report',
+      'food-chain',
+      'food-lesson',
+      'fish-oxygen',
+      'do',
+      'viewfinder1',
+      'viewfinder2',
+      'viewfinder3',
+      'subject-viewfinder1',
+      'subject-viewfinder2',
+      'subject-viewfinder3',
+    ];
+    if (gameState.debugMode && diveDebugScreens.includes(requestedScreen ?? '')) {
+      this.scene.start(SceneKeys.Dive);
+      return;
+    }
     this.stage =
       gameState.debugMode && requestedScreen === 'archive'
         ? 'photoReview'
@@ -197,7 +217,6 @@ export class OpeningScene extends Phaser.Scene {
       .setAlpha(0)
       .setInteractive({ useHandCursor: false });
     this.video = video;
-
     this.videoStatus = this.add
       .text(GAME_WIDTH / 2, GAME_HEIGHT - 94, i18n.t('opening.videoLoading'), {
         fontFamily: 'sans-serif',
@@ -228,8 +247,9 @@ export class OpeningScene extends Phaser.Scene {
       // leaving an invisible-but-playing video behind the static poster.
       this.showVideoPlayingState();
     });
-    video.once('play', () => this.showVideoPlayingState());
-    video.on('playing', () => this.showVideoPlayingState());
+    // Do not hide the poster merely because the audio track has started.
+    // HEVC-in-MP4 can emit play/playing in Chromium while producing no video
+    // frames. Only `created` proves Phaser received a drawable first frame.
     video.once('complete', () => this.handleVideoComplete(stage));
     video.once('error', () => this.renderVideoFallback(stage));
     video.on('locked', () => this.handleVideoLocked());
@@ -470,7 +490,7 @@ export class OpeningScene extends Phaser.Scene {
       this.add
         .text(72, 52, 'CHAPTER 01  /  FIELD ARCHIVE', {
           fontFamily: 'sans-serif',
-          fontSize: '20px',
+          fontSize: '26px',
           color: Palette.accentText,
           fontStyle: 'bold',
         })
@@ -480,7 +500,7 @@ export class OpeningScene extends Phaser.Scene {
       this.add
         .text(GAME_WIDTH / 2, 104, i18n.t('opening.photoReviewTitle'), {
           fontFamily: 'sans-serif',
-          fontSize: '48px',
+          fontSize: '54px',
           color: Palette.textLight,
           fontStyle: 'bold',
         })
@@ -489,9 +509,9 @@ export class OpeningScene extends Phaser.Scene {
     );
     this.uiObjects.push(
       this.add
-        .text(GAME_WIDTH / 2, 158, i18n.t('opening.photoReviewHint'), {
+        .text(GAME_WIDTH / 2, 164, i18n.t('opening.photoReviewHint'), {
           fontFamily: 'sans-serif',
-          fontSize: '21px',
+          fontSize: '28px',
           color: Palette.textMuted,
           align: 'center',
         })
@@ -500,11 +520,11 @@ export class OpeningScene extends Phaser.Scene {
     );
 
     const viewportX = 760;
-    const viewportY = 525;
+    const viewportY = 540;
     const viewportWidth = 1030;
     const viewportHeight = 555;
     this.uiObjects.push(
-      createResearchSurface(this, viewportX, viewportY + 30, 1080, 650, {
+      createResearchSurface(this, viewportX, viewportY + 30, 1080, 700, {
         depth: 1,
         fill: Palette.modal,
         border: Palette.accentSoft,
@@ -582,11 +602,11 @@ export class OpeningScene extends Phaser.Scene {
     const label = this.add
       .text(
         viewportX,
-        258,
+        276,
         `${i18n.t('dive.historicalPhoto')} ${this.photoIndex + 1} / 3  ·  ${i18n.t(`dive.station${this.photoIndex + 1}`)}`,
         {
           fontFamily: 'sans-serif',
-          fontSize: '25px',
+          fontSize: '31px',
           color: Palette.textLight,
           fontStyle: 'bold',
         },
@@ -594,67 +614,57 @@ export class OpeningScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
     const stepLabel = this.add
-      .text(300, 812, i18n.t('common.stepLabel'), {
+      .text(286, 820, i18n.t('common.stepLabel'), {
         fontFamily: 'monospace',
-        fontSize: '20px',
+        fontSize: '24px',
         color: '#f0c95a',
         fontStyle: 'bold',
       })
       .setOrigin(0, 0.5)
       .setDepth(10);
     const stepHint = this.add
-      .text(
-        390,
-        812,
-        i18n.t('opening.photoHotspotHint'),
-        {
-          fontFamily: 'sans-serif',
-          fontSize: '21px',
-          color: '#e6fbff',
-          fontStyle: 'bold',
-          wordWrap: { width: 770, useAdvancedWrap: true },
-        },
-      )
+      .text(390, 820, i18n.t('opening.photoHotspotHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '26px',
+        color: '#e6fbff',
+        fontStyle: 'bold',
+        wordWrap: { width: 850, useAdvancedWrap: true },
+      })
       .setOrigin(0, 0.5)
       .setDepth(10);
     const tipLabel = this.add
-      .text(300, 860, i18n.t('common.tipLabel'), {
+      .text(286, 875, i18n.t('common.tipLabel'), {
         fontFamily: 'monospace',
-        fontSize: '20px',
+        fontSize: '24px',
         color: Palette.accentText,
         fontStyle: 'bold',
       })
       .setOrigin(0, 0.5)
       .setDepth(10);
     const controlHint = this.add
-      .text(
-        390,
-        860,
-        i18n.t('opening.photoInspectHint'),
-        {
-          fontFamily: 'sans-serif',
-          fontSize: '19px',
-          color: Palette.textMuted,
-          wordWrap: { width: 800, useAdvancedWrap: true },
-        },
-      )
+      .text(390, 875, i18n.t('opening.photoInspectHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '24px',
+        color: Palette.textMuted,
+        wordWrap: { width: 850, useAdvancedWrap: true },
+      })
       .setOrigin(0, 0.5)
       .setDepth(10);
     this.uiObjects.push(viewport, label, stepLabel, stepHint, tipLabel, controlHint);
 
-    const tabX = viewportX - 190;
+    const tabX = 430;
     for (const [index, stationName] of [
       i18n.t('dive.station1'),
       i18n.t('dive.station2'),
       i18n.t('dive.station3'),
     ].entries()) {
       const tab = this.addButton(
-        tabX + index * 190,
-        210,
+        tabX + index * 330,
+        220,
         `${index + 1} · ${stationName}`,
         index === this.photoIndex,
       );
-      tab.setFontSize(19);
+      tab.setFontSize(24).setPadding(26, 14, 26, 14);
       tab.on(Phaser.Input.Events.POINTER_UP, () => {
         this.photoIndex = index;
         this.photoZoom = 1;
@@ -666,16 +676,14 @@ export class OpeningScene extends Phaser.Scene {
 
     const previous = this.addButton(180, viewportY, '‹', false);
     previous.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => this.changePhoto(-1));
-    const next = this.addButton(1305, viewportY, '›', false);
+    const next = this.addButton(1280, viewportY, '›', false);
     next.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => this.changePhoto(1));
-    const reset = this.addButton(
-      1290,
-      GAME_HEIGHT - 70,
-      i18n.t('opening.photoReset'),
-      false,
-    );
+    const reset = this.addButton(1290, GAME_HEIGHT - 70, i18n.t('opening.photoReset'), false);
+    reset.setFontSize(24).setPadding(26, 14, 26, 14);
     reset.on(Phaser.Input.Events.POINTER_UP, () => this.resetPhotoView());
 
+    const allPhotosReviewed = this.areAllPhotoLocationsReviewed();
+    const readyToFinish = this.photoIndex === PHOTO_KEYS.length - 1 && allPhotosReviewed;
     const continueButton = this.addButton(
       930,
       GAME_HEIGHT - 70,
@@ -684,6 +692,31 @@ export class OpeningScene extends Phaser.Scene {
         : i18n.t('opening.continue'),
       true,
     );
+    continueButton.setFontSize(25).setPadding(28, 15, 28, 15);
+    if (readyToFinish) {
+      const readyHint = this.add
+        .text(930, GAME_HEIGHT - 126, i18n.t('opening.photoContinueReady'), {
+          fontFamily: 'sans-serif',
+          fontSize: '23px',
+          color: '#fff3a8',
+          fontStyle: 'bold',
+          align: 'center',
+          backgroundColor: '#4b3b13cc',
+          padding: { x: 18, y: 9 },
+        })
+        .setOrigin(0.5)
+        .setDepth(21);
+      this.uiObjects.push(readyHint);
+      this.tweens.add({
+        targets: [continueButton, readyHint],
+        alpha: { from: 0.62, to: 1 },
+        scale: { from: 0.98, to: 1.05 },
+        duration: 620,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
     continueButton.on(Phaser.Input.Events.POINTER_UP, () => {
       const currentHotspots = PHOTO_HOTSPOTS[this.photoIndex] ?? [];
       const hasObservedClue = currentHotspots.some((hotspot) =>
@@ -701,10 +734,7 @@ export class OpeningScene extends Phaser.Scene {
         this.renderStage();
         return;
       }
-      const allPhotosReviewed = PHOTO_HOTSPOTS.every((hotspots, index) =>
-        hotspots.some((hotspot) => this.photoHotspotFound.has(`${index}:${hotspot.id}`)),
-      );
-      if (!allPhotosReviewed) {
+      if (!this.areAllPhotoLocationsReviewed()) {
         this.photoHotspotReactionText?.setText(i18n.t('opening.photoReviewAllBeforeConclusion'));
         return;
       }
@@ -712,6 +742,7 @@ export class OpeningScene extends Phaser.Scene {
       this.renderStage();
     });
     const backButton = this.addButton(112, GAME_HEIGHT - 70, i18n.t('common.backStep'), false);
+    backButton.setFontSize(24).setPadding(26, 14, 26, 14);
     backButton.on(Phaser.Input.Events.POINTER_UP, () => {
       this.photoHotspotFound.clear();
       this.photoIndex = 0;
@@ -728,7 +759,7 @@ export class OpeningScene extends Phaser.Scene {
     this.uiObjects.push(
       this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x04131f, 1).setOrigin(0).setDepth(-10),
     );
-    const panel = createResearchSurface(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, 1380, 760, {
+    const panel = createResearchSurface(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, 1480, 820, {
       depth: 1,
       fill: Palette.modal,
       border: Palette.accentSoft,
@@ -738,9 +769,9 @@ export class OpeningScene extends Phaser.Scene {
       goldRail: true,
     });
     const title = this.add
-      .text(GAME_WIDTH / 2, 190, i18n.t('opening.photoConclusionTitle'), {
+      .text(GAME_WIDTH / 2, 170, i18n.t('opening.photoConclusionTitle'), {
         fontFamily: 'sans-serif',
-        fontSize: '46px',
+        fontSize: '52px',
         color: Palette.textLight,
         fontStyle: 'bold',
         align: 'center',
@@ -750,34 +781,34 @@ export class OpeningScene extends Phaser.Scene {
     const question = this.add
       .text(
         GAME_WIDTH / 2,
-        315,
+        292,
         `${i18n.t('common.questionLabel')} ${i18n.t('opening.photoConclusionQuestion')}`,
         {
           fontFamily: 'sans-serif',
-          fontSize: '30px',
+          fontSize: '40px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',
-          wordWrap: { width: 1100, useAdvancedWrap: true },
+          wordWrap: { width: 1220, useAdvancedWrap: true },
         },
       )
       .setOrigin(0.5)
       .setDepth(3);
     const options = this.add
-      .text(410, 405, i18n.t('common.optionsLabel'), {
+      .text(300, 382, i18n.t('common.optionsLabel'), {
         fontFamily: 'monospace',
-        fontSize: '21px',
+        fontSize: '29px',
         color: '#f0c95a',
         fontStyle: 'bold',
       })
       .setDepth(3);
     const feedback = this.add
-      .text(GAME_WIDTH / 2, 660, '', {
+      .text(GAME_WIDTH / 2, 682, '', {
         fontFamily: 'sans-serif',
-        fontSize: '23px',
+        fontSize: '27px',
         color: '#91e6a7',
         align: 'center',
-        wordWrap: { width: 980, useAdvancedWrap: true },
+        wordWrap: { width: 1240, useAdvancedWrap: true },
       })
       .setOrigin(0.5)
       .setDepth(3);
@@ -789,38 +820,61 @@ export class OpeningScene extends Phaser.Scene {
       { key: 'opening.photoConclusionB', correct: false },
     ] as const;
     choices.forEach((choice, index) => {
-      const button = this.addButton(
-        index === 0 ? 660 : 1260,
-        535,
-        `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
-        false,
-      );
-      button.setFontSize(23);
-      button.on(Phaser.Input.Events.POINTER_UP, () => {
+      const centerX = index === 0 ? 635 : 1285;
+      const centerY = 520;
+      const card = this.add
+        .rectangle(centerX, centerY, 580, 180, 0x123c50, 1)
+        .setStrokeStyle(3, 0x62b7bd, 0.65)
+        .setDepth(3)
+        .setInteractive({ useHandCursor: true });
+      const choiceText = this.add
+        .text(centerX, centerY, `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`, {
+          fontFamily: 'sans-serif',
+          fontSize: '31px',
+          color: Palette.textLight,
+          fontStyle: 'bold',
+          align: 'center',
+          lineSpacing: 8,
+          wordWrap: { width: 510, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5)
+        .setDepth(5);
+      this.uiObjects.push(card, choiceText);
+      card.on(Phaser.Input.Events.POINTER_OVER, () => {
+        card.setFillStyle(0x18516a, 1).setStrokeStyle(3, 0x91ded8, 0.95);
+      });
+      card.on(Phaser.Input.Events.POINTER_OUT, () => {
+        card.setFillStyle(0x123c50, 1).setStrokeStyle(3, 0x62b7bd, 0.65);
+      });
+      card.on(Phaser.Input.Events.POINTER_UP, () => {
+        card
+          .setFillStyle(choice.correct ? 0x176456 : 0x704138, 1)
+          .setStrokeStyle(3, choice.correct ? 0x91e6a7 : 0xffb09d, 1);
         feedback
           .setText(
             i18n.t(
-              choice.correct
-                ? 'opening.photoConclusionCorrect'
-                : 'opening.photoConclusionTryAgain',
+              choice.correct ? 'opening.photoConclusionCorrect' : 'opening.photoConclusionTryAgain',
             ),
           )
           .setColor(choice.correct ? '#91e6a7' : '#ffb09d');
         continueButton?.setVisible(choice.correct);
+        if (choice.correct && continueButton !== null) this.pulseTextButton(continueButton);
       });
     });
     continueButton = this.addButton(
       GAME_WIDTH / 2,
-      785,
+      835,
       i18n.t('opening.photoConclusionContinue'),
       true,
     ).setVisible(false);
+    continueButton.setFontSize(30).setPadding(44, 19, 44, 19);
     continueButton.on(Phaser.Input.Events.POINTER_UP, () => {
       this.stage = 'op02';
       this.startWithNarration = true;
       this.renderStage();
     });
-    const back = this.addButton(390, 785, i18n.t('common.backStep'), false);
+    const back = this.addButton(330, 835, i18n.t('common.backStep'), false);
+    back.setFontSize(25).setPadding(28, 15, 28, 15);
     back.on(Phaser.Input.Events.POINTER_UP, () => {
       this.photoIndex = PHOTO_KEYS.length - 1;
       this.stage = 'photoReview';
@@ -875,14 +929,18 @@ export class OpeningScene extends Phaser.Scene {
   }
 
   private createPhotoEvidencePanel(): void {
-    const left = 1350;
-    const top = 270;
-    const width = 500;
-    const height = 560;
+    const left = 1328;
+    const top = 220;
+    const width = 542;
+    const height = 700;
     const hotspots = PHOTO_HOTSPOTS[this.photoIndex] ?? [];
     const found = hotspots.filter((hotspot) =>
       this.photoHotspotFound.has(`${this.photoIndex}:${hotspot.id}`),
     ).length;
+    const currentHotspot = hotspots[0];
+    const currentHotspotFound =
+      currentHotspot !== undefined &&
+      this.photoHotspotFound.has(`${this.photoIndex}:${currentHotspot.id}`);
 
     const panel = this.add.graphics().setDepth(12);
     panel.fillStyle(0x092637, 0.96).fillRoundedRect(left, top, width, height, 18);
@@ -895,71 +953,91 @@ export class OpeningScene extends Phaser.Scene {
     const title = this.add
       .text(left + 24, top + 22, i18n.t('opening.photoHotspotTitle'), {
         fontFamily: 'sans-serif',
-        fontSize: '28px',
+        fontSize: '36px',
         color: Palette.textLight,
         fontStyle: 'bold',
       })
       .setDepth(13);
     this.photoHotspotProgressText = this.add
-      .text(left + width - 20, top + 25, this.formatHotspotProgress(found, hotspots.length), {
+      .text(left + width - 24, top + 31, this.formatHotspotProgress(found, hotspots.length), {
         fontFamily: 'monospace',
-        fontSize: '17px',
+        fontSize: '23px',
         color: '#f0c95a',
       })
       .setOrigin(1, 0)
       .setDepth(13);
     const reactionLabel = this.add
-      .text(left + 24, top + 76, i18n.t('opening.photoReaction'), {
+      .text(left + 24, top + 88, i18n.t('opening.photoReaction'), {
         fontFamily: 'monospace',
-        fontSize: '17px',
+        fontSize: '24px',
         color: Palette.accentText,
         fontStyle: 'bold',
       })
       .setDepth(13);
     this.photoHotspotReactionText = this.add
-      .text(left + 24, top + 112, i18n.t('opening.photoHotspotDefault'), {
-        fontFamily: 'sans-serif',
-        fontSize: '21px',
-        color: '#d6eaf1',
-        lineSpacing: 6,
-        wordWrap: { width: width - 48, useAdvancedWrap: true },
-      })
+      .text(
+        left + 24,
+        top + 128,
+        currentHotspotFound && currentHotspot !== undefined
+          ? i18n.t(currentHotspot.reactionKey)
+          : i18n.t('opening.photoHotspotDefault'),
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '26px',
+          color: '#d6eaf1',
+          lineSpacing: 8,
+          wordWrap: { width: width - 48, useAdvancedWrap: true },
+        },
+      )
       .setDepth(13);
     const recordLabel = this.add
-      .text(left + 24, top + 300, i18n.t('opening.photoFishGuide'), {
+      .text(left + 24, top + 326, i18n.t('opening.photoFishGuide'), {
         fontFamily: 'monospace',
-        fontSize: '17px',
+        fontSize: '24px',
         color: '#f0c95a',
         fontStyle: 'bold',
       })
       .setDepth(13);
-    const currentHotspot = hotspots[0];
-    if (currentHotspot !== undefined && this.textures.exists(currentHotspot.guideTextureKey)) {
-      const source = this.textures.get(currentHotspot.guideTextureKey).getSourceImage();
-      const scale = Math.min(92 / source.width, 68 / source.height);
+    const guideTextureKey =
+      currentHotspot === undefined
+        ? null
+        : this.resolveGuideTextureKey(currentHotspot.guideTextureKey);
+    if (guideTextureKey !== null && this.textures.exists(guideTextureKey)) {
+      const source = this.textures.get(guideTextureKey).getSourceImage();
+      const scale = Math.min(126 / source.width, 92 / source.height);
       this.photoGuideImage = this.add
-        .image(left + 78, top + 438, currentHotspot.guideTextureKey)
+        .image(left + 86, top + 478, guideTextureKey)
         .setDisplaySize(source.width * scale, source.height * scale)
         .setDepth(13)
         .setVisible(found > 0);
     }
     this.photoGuideTitleText = this.add
-      .text(left + 150, top + 344, found > 0 && currentHotspot !== undefined ? i18n.t(currentHotspot.guideTitleKey) : '—', {
-        fontFamily: 'sans-serif',
-        fontSize: '22px',
-        color: '#d8fffb',
-        fontStyle: 'bold',
-        wordWrap: { width: width - 170, useAdvancedWrap: true },
-      })
+      .text(
+        left + 164,
+        top + 378,
+        found > 0 && currentHotspot !== undefined ? i18n.t(currentHotspot.guideTitleKey) : '—',
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '30px',
+          color: '#d8fffb',
+          fontStyle: 'bold',
+          wordWrap: { width: width - 192, useAdvancedWrap: true },
+        },
+      )
       .setDepth(13);
     this.photoHotspotRecordText = this.add
-      .text(left + 150, top + 394, found > 0 && currentHotspot !== undefined ? i18n.t(currentHotspot.guideBodyKey) : '', {
-        fontFamily: 'sans-serif',
-        fontSize: '19px',
-        color: '#a9c5d0',
-        lineSpacing: 4,
-        wordWrap: { width: width - 174, useAdvancedWrap: true },
-      })
+      .text(
+        left + 164,
+        top + 428,
+        found > 0 && currentHotspot !== undefined ? i18n.t(currentHotspot.guideBodyKey) : '',
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '24px',
+          color: '#a9c5d0',
+          lineSpacing: 7,
+          wordWrap: { width: width - 192, useAdvancedWrap: true },
+        },
+      )
       .setDepth(13);
     this.uiObjects.push(
       panel,
@@ -997,6 +1075,36 @@ export class OpeningScene extends Phaser.Scene {
       this.photoHotspotFound.has(`${this.photoIndex}:${item.id}`),
     ).length;
     this.photoHotspotProgressText?.setText(this.formatHotspotProgress(found, hotspots.length));
+
+    // The final clue used to update only the evidence panel. Rebuild the
+    // screen immediately so the completion hint, pulse and button state are
+    // available without making the learner switch photos first.
+    if (this.photoIndex === PHOTO_KEYS.length - 1 && this.areAllPhotoLocationsReviewed()) {
+      this.time.delayedCall(0, () => {
+        if (this.stage === 'photoReview') this.renderStage();
+      });
+    }
+  }
+
+  private areAllPhotoLocationsReviewed(): boolean {
+    return PHOTO_HOTSPOTS.every((hotspots, index) =>
+      hotspots.some((hotspot) => this.photoHotspotFound.has(`${index}:${hotspot.id}`)),
+    );
+  }
+
+  private resolveGuideTextureKey(sourceKey: string): string | null {
+    if (!this.textures.exists(sourceKey)) return null;
+    if (
+      sourceKey.startsWith('chapter1-subject-blue-damselfish-frame-') ||
+      sourceKey.startsWith('chapter1-subject-silver-reef-fish-frame-')
+    ) {
+      const transparentKey = `${sourceKey}-edge-transparent`;
+      return ensureEdgeTransparentTexture(this, sourceKey, transparentKey) &&
+        this.textures.exists(transparentKey)
+        ? transparentKey
+        : null;
+    }
+    return sourceKey;
   }
 
   private formatHotspotProgress(found: number, total: number): string {
@@ -1023,6 +1131,19 @@ export class OpeningScene extends Phaser.Scene {
     button.on(Phaser.Input.Events.POINTER_OVER, () => button.setScale(1.04));
     button.on(Phaser.Input.Events.POINTER_OUT, () => button.setScale(1));
     return button;
+  }
+
+  private pulseTextButton(button: Phaser.GameObjects.Text): void {
+    if (button.getData('cta-pulse') === true) return;
+    button.setData('cta-pulse', true);
+    this.tweens.add({
+      targets: button,
+      alpha: { from: 0.72, to: 1 },
+      duration: 620,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
   }
 
   private handleVideoComplete(stage: 'op01' | 'op02'): void {

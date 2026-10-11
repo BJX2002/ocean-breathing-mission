@@ -1,8 +1,8 @@
 [
   {
     "id": "blue-damselfish",
-    "nameEn": "Regal Damselfish",
-    "nameZh": "石剝（雀鯛）",
+    "nameEn": "Chinese damselfish",
+    "nameZh": "黃尾石剎／斑氏新雀鯛",
     "functionalGroup": "strongly-mobile-fish",
     "abundanceCategory": "common",
     "mobility": "high",
@@ -12,8 +12,8 @@
   },
   {
     "id": "reef-grouper",
-    "nameEn": "Spotted Grouper",
-    "nameZh": "斑點石斑",
+    "nameEn": "Hong Kong grouper",
+    "nameZh": "紅斑／香港石斑魚",
     "functionalGroup": "habitat-associated-fish",
     "abundanceCategory": "occasional",
     "mobility": "medium",
@@ -34,8 +34,8 @@
   },
   {
     "id": "hardy-goby",
-    "nameEn": "Eye-marked Goby",
-    "nameZh": "眼斑鰕虎魚",
+    "nameEn": "Dusky frillgoby",
+    "nameZh": "深鰕虎魚／褐深鰕虎",
     "functionalGroup": "tolerant-organism",
     "abundanceCategory": "abundant",
     "mobility": "medium",
@@ -56,8 +56,8 @@
   },
   {
     "id": "silver-reef-fish",
-    "nameEn": "Silver Moony",
-    "nameZh": "銀月魚",
+    "nameEn": "Russell's snapper",
+    "nameZh": "火點／勒氏笛鯛",
     "functionalGroup": "strongly-mobile-fish",
     "abundanceCategory": "common",
     "mobility": "high",

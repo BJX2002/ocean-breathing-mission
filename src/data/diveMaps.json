@@ -14,17 +14,77 @@
       { "kind": "seagrass", "x": 1320, "y": 972 }
     ],
     "cameraStations": [
-      { "id": "cs-1", "x": 420, "y": 350, "labelEn": "Station 1 — Bay entrance", "labelZh": "站點 1 — 灣口" },
-      { "id": "cs-2", "x": 960, "y": 555, "labelEn": "Station 2 — Raft edge", "labelZh": "站點 2 — 魚排邊" },
-      { "id": "cs-3", "x": 1500, "y": 755, "labelEn": "Station 3 — Inner bay", "labelZh": "站點 3 — 內灣" }
+      {
+        "id": "cs-1",
+        "x": 420,
+        "y": 350,
+        "labelEn": "Station 1 — Bay entrance",
+        "labelZh": "站點 1 — 灣口"
+      },
+      {
+        "id": "cs-2",
+        "x": 960,
+        "y": 555,
+        "labelEn": "Station 2 — Raft edge",
+        "labelZh": "站點 2 — 魚排邊"
+      },
+      {
+        "id": "cs-3",
+        "x": 1500,
+        "y": 755,
+        "labelEn": "Station 3 — Inner bay",
+        "labelZh": "站點 3 — 內灣"
+      }
     ],
     "subjects": [
-      { "id": "subject-school-1", "speciesId": "blue-damselfish", "x": 300, "y": 330, "visual": "school", "depthZone": "mid" },
-      { "id": "subject-grouper-1", "speciesId": "reef-grouper", "x": 560, "y": 780, "visual": "goby", "depthZone": "bottom" },
-      { "id": "subject-cucumber-1", "speciesId": "sea-cucumber", "x": 840, "y": 890, "visual": "cucumber", "depthZone": "bottom" },
-      { "id": "subject-goby-1", "speciesId": "hardy-goby", "x": 1160, "y": 815, "visual": "goby", "depthZone": "bottom" },
-      { "id": "subject-sponge-1", "speciesId": "tube-sponge", "x": 1380, "y": 905, "visual": "sponge", "depthZone": "bottom" },
-      { "id": "subject-school-2", "speciesId": "silver-reef-fish", "x": 1640, "y": 360, "visual": "school", "depthZone": "mid" }
+      {
+        "id": "subject-school-1",
+        "speciesId": "blue-damselfish",
+        "x": 300,
+        "y": 330,
+        "visual": "school",
+        "depthZone": "mid"
+      },
+      {
+        "id": "subject-grouper-1",
+        "speciesId": "reef-grouper",
+        "x": 865,
+        "y": 625,
+        "visual": "goby",
+        "depthZone": "bottom"
+      },
+      {
+        "id": "subject-cucumber-1",
+        "speciesId": "sea-cucumber",
+        "x": 1410,
+        "y": 840,
+        "visual": "cucumber",
+        "depthZone": "bottom"
+      },
+      {
+        "id": "subject-goby-1",
+        "speciesId": "hardy-goby",
+        "x": 1160,
+        "y": 815,
+        "visual": "goby",
+        "depthZone": "bottom"
+      },
+      {
+        "id": "subject-sponge-1",
+        "speciesId": "tube-sponge",
+        "x": 840,
+        "y": 905,
+        "visual": "sponge",
+        "depthZone": "bottom"
+      },
+      {
+        "id": "subject-school-2",
+        "speciesId": "silver-reef-fish",
+        "x": 1640,
+        "y": 360,
+        "visual": "school",
+        "depthZone": "mid"
+      }
     ]
   },
   {

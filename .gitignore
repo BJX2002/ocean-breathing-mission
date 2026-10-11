@@ -34,6 +34,11 @@ coverage/
 .pnpm-store/
 .tmp/
 /OP/
+/NEWOP1/
+/新建文件夹/
+/屏幕截图*.png
+/scientist.png
+/script.txt
 report_assets/
 *.docx
 *.pdf
@@ -45,3 +50,9 @@ report_assets/
 public/assets/chapter1/op/*.mp4
 !public/assets/chapter1/op/*.web.mp4
 public/assets/chapter1/op2/*.hevc*.mp4
+
+# Keep local source masters and superseded asset sets out of the web release.
+# The final H.264/AAC delivery copies remain tracked.
+public/assets/chapter1/archive/
+public/assets/chapter1/OP_NEW/*.mp4
+!public/assets/chapter1/OP_NEW/*.web.mp4

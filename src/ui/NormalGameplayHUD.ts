@@ -1,129 +1,156 @@
 import Phaser from 'phaser';
-import { GAME_HEIGHT, GAME_WIDTH, Palette } from '../config/constants';
+import { GAME_WIDTH, Palette } from '../config/constants';
 import { i18n } from '../i18n/LocaleService';
 import { OxygenGauge } from './OxygenGauge';
-import { chooseHudInteraction, selectCurrentStation, type HudInteraction, type HudStationProgress } from './HudModel';
 
 const SAFE_MARGIN = 48;
 const HUD_DEPTH = 900;
 const PANEL_FILL = 0x062838;
-const PANEL_ALPHA = 0.76;
-const RESEARCH_Y = 42;
-const RESEARCH_COUNTER_WIDTH = 154;
-const RESEARCH_COUNTER_HEIGHT = 62;
-const RESEARCH_COUNTER_GAP = 12;
-const RESEARCH_COUNTER_X = GAME_WIDTH - SAFE_MARGIN - RESEARCH_COUNTER_WIDTH * 2 - RESEARCH_COUNTER_GAP - 56;
+const PANEL_LEFT = SAFE_MARGIN;
+const PANEL_TOP = 28;
+const PANEL_WIDTH = 760;
+const PANEL_HEIGHT = 202;
 
 export interface NormalGameplayHUDState {
-  readonly stationProgress: readonly HudStationProgress[];
-  readonly stationPhotoCount: number;
-  readonly stationPhotoGoal: number;
-  readonly organismCount: number;
-  readonly organismGoal: number;
-}
-
-interface CounterVisual {
-  readonly background: Phaser.GameObjects.Rectangle;
-  readonly icon: Phaser.GameObjects.Graphics;
-  readonly label: Phaser.GameObjects.Text;
-  readonly value: Phaser.GameObjects.Text;
+  readonly completedTaskCount: number;
+  readonly totalTaskCount: number;
+  readonly taskLabel: string;
+  readonly actionKey: string;
+  readonly actionEnglish: string;
+  readonly actionLabel: string;
+  readonly targetTextureKey?: string | null;
+  readonly targetLabel?: string | null;
 }
 
 /**
- * Presentation-only HUD for the normal underwater exploration state.
- * Gameplay state stays in DiveScene and its existing entities/systems.
+ * Persistent Chapter 1 guidance. The card always answers two questions in one
+ * place: what the player must do now, and which control performs that action.
+ * Brief success/error notifications remain separate and never replace it.
  */
 export class NormalGameplayHUD {
   private readonly missionPanel: Phaser.GameObjects.Graphics;
   private readonly missionChapter: Phaser.GameObjects.Text;
+  private readonly missionProgressText: Phaser.GameObjects.Text;
   private readonly missionTitle: Phaser.GameObjects.Text;
-  private readonly missionStation: Phaser.GameObjects.Text;
-  private readonly missionProgress: Phaser.GameObjects.Graphics;
-  private readonly researchCounters: CounterVisual[];
+  private readonly actionPrefix: Phaser.GameObjects.Text;
+  private readonly actionKeycap: Phaser.GameObjects.Rectangle;
+  private readonly actionKey: Phaser.GameObjects.Text;
+  private readonly movementKeycaps: Phaser.GameObjects.Rectangle[] = [];
+  private readonly movementKeys: Phaser.GameObjects.Text[] = [];
+  private readonly actionEnglish: Phaser.GameObjects.Text;
+  private readonly actionLabel: Phaser.GameObjects.Text;
+  private readonly targetCard: Phaser.GameObjects.Graphics;
+  private readonly targetImage: Phaser.GameObjects.Image;
+  private readonly targetLabel: Phaser.GameObjects.Text;
   private readonly oxygen: OxygenGauge;
-  private readonly controlsHint: Phaser.GameObjects.Text;
-  private readonly promptBackground: Phaser.GameObjects.Rectangle;
-  private readonly promptKeycap: Phaser.GameObjects.Rectangle;
-  private readonly promptKey: Phaser.GameObjects.Text;
-  private readonly promptLabel: Phaser.GameObjects.Text;
   private readonly notificationBackground: Phaser.GameObjects.Rectangle;
   private readonly notificationText: Phaser.GameObjects.Text;
-  private currentPrompt: HudInteraction | null = null;
   private currentStateKey = '';
   private notificationTweenTargets: Phaser.GameObjects.GameObject[] = [];
 
   constructor(private readonly scene: Phaser.Scene) {
     this.missionPanel = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
     this.missionChapter = scene.add
-      .text(SAFE_MARGIN + 18, 42, '', this.textStyle(17, '#8edfd8', true))
+      .text(PANEL_LEFT + 18, PANEL_TOP + 14, '', this.textStyle(16, '#8edfd8', true))
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
+    this.missionProgressText = scene.add
+      .text(PANEL_LEFT + PANEL_WIDTH - 18, PANEL_TOP + 12, '', this.textStyle(19, '#f0c95a', true))
+      .setOrigin(1, 0)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 1);
     this.missionTitle = scene.add
-      .text(SAFE_MARGIN + 18, 67, '', this.textStyle(32, Palette.textLight, true))
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 1);
-    this.missionStation = scene.add
-      .text(SAFE_MARGIN + 18, 111, '', this.textStyle(20, Palette.textMuted, false))
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 1);
-    this.missionProgress = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH + 1);
-
-    this.researchCounters = [
-      this.createCounter(RESEARCH_COUNTER_X, RESEARCH_Y, 'camera'),
-      this.createCounter(
-        RESEARCH_COUNTER_X + RESEARCH_COUNTER_WIDTH + RESEARCH_COUNTER_GAP,
-        RESEARCH_Y,
-        'fish',
-      ),
-    ];
-
-    this.oxygen = new OxygenGauge(scene, SAFE_MARGIN, GAME_HEIGHT - 82, false);
-    this.controlsHint = scene.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 36, i18n.t('dive.controlsPersistent'), {
-        ...this.textStyle(18, Palette.textLight, true),
-        backgroundColor: '#04121fcc',
-        padding: { x: 14, y: 8 },
+      .text(PANEL_LEFT + 18, PANEL_TOP + 52, '', {
+        ...this.textStyle(27, Palette.textLight, true),
+        wordWrap: { width: PANEL_WIDTH - 36, useAdvancedWrap: true },
       })
-      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
+
+    this.actionPrefix = scene.add
+      .text(PANEL_LEFT + 20, PANEL_TOP + 143, '', this.textStyle(20, '#ffffff', true))
+      .setOrigin(0, 0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 2);
 
-    this.promptBackground = scene.add
-      .rectangle(GAME_WIDTH - SAFE_MARGIN - 210, GAME_HEIGHT - 70, 420, 66, PANEL_FILL, 0.9)
-      .setStrokeStyle(1, Palette.accent, 0.28)
+    this.actionKeycap = scene.add
+      .rectangle(PANEL_LEFT + 105, PANEL_TOP + 143, 108, 58, 0xf0c95a, 1)
+      .setStrokeStyle(3, 0xffeba0, 0.96)
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
+    this.actionKey = scene.add
+      .text(PANEL_LEFT + 105, PANEL_TOP + 143, '', this.textStyle(21, '#17313b', true))
       .setOrigin(0.5)
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 4)
-      .setVisible(false);
-    this.promptKeycap = scene.add
-      .rectangle(GAME_WIDTH - SAFE_MARGIN - 382, GAME_HEIGHT - 70, 62, 42, 0x123c50, 0.98)
-      .setStrokeStyle(1, Palette.accent, 0.7)
-      .setOrigin(0.5)
+      .setDepth(HUD_DEPTH + 2);
+    ['W ↑', 'A ←', 'S ↓', 'D →'].forEach((label, index) => {
+      const keyX = PANEL_LEFT + 76 + index * 54;
+      this.movementKeycaps.push(
+        scene.add
+          .rectangle(keyX, PANEL_TOP + 143, 50, 58, 0xf0c95a, 1)
+          .setStrokeStyle(2, 0xffeba0, 0.94)
+          .setScrollFactor(0)
+          .setDepth(HUD_DEPTH + 1)
+          .setVisible(false),
+      );
+      this.movementKeys.push(
+        scene.add
+          .text(keyX, PANEL_TOP + 143, label, this.textStyle(17, '#17313b', true))
+          .setOrigin(0.5)
+          .setScrollFactor(0)
+          .setDepth(HUD_DEPTH + 2)
+          .setVisible(false),
+      );
+    });
+    this.actionEnglish = scene.add
+      .text(PANEL_LEFT + 176, PANEL_TOP + 112, '', this.textStyle(14, '#f0c95a', true))
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 5)
-      .setVisible(false);
-    this.promptKey = scene.add
-      .text(GAME_WIDTH - SAFE_MARGIN - 382, GAME_HEIGHT - 70, '', this.textStyle(18, Palette.textLight, true))
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 6)
-      .setVisible(false);
-    this.promptLabel = scene.add
-      .text(GAME_WIDTH - SAFE_MARGIN - 344, GAME_HEIGHT - 70, '', this.textStyle(21, Palette.textLight, false))
+      .setDepth(HUD_DEPTH + 2);
+    this.actionLabel = scene.add
+      .text(PANEL_LEFT + 176, PANEL_TOP + 143, '', {
+        ...this.textStyle(21, '#ffffff', true),
+        lineSpacing: 3,
+        wordWrap: { width: 330, useAdvancedWrap: true },
+      })
       .setOrigin(0, 0.5)
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 5)
+      .setDepth(HUD_DEPTH + 2);
+
+    this.targetCard = scene.add
+      .graphics()
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 1);
+    this.targetImage = scene.add
+      .image(PANEL_LEFT + PANEL_WIDTH - 112, PANEL_TOP + 145, '__WHITE')
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 2)
+      .setVisible(false);
+    this.targetLabel = scene.add
+      .text(PANEL_LEFT + PANEL_WIDTH - 28, PANEL_TOP + 145, '', {
+        ...this.textStyle(17, '#fff3a8', true),
+        align: 'center',
+        wordWrap: { width: 104, useAdvancedWrap: true },
+      })
+      .setOrigin(1, 0.5)
+      .setScrollFactor(0)
+      .setDepth(HUD_DEPTH + 2)
       .setVisible(false);
 
+    this.oxygen = new OxygenGauge(scene, SAFE_MARGIN, 998, false);
+
     this.notificationBackground = scene.add
-      .rectangle(GAME_WIDTH / 2 + 180, 192, 660, 66, PANEL_FILL, 0.92)
-      .setStrokeStyle(1, 0xf2c75c, 0.46)
+      .rectangle(GAME_WIDTH / 2 + 70, 82, 760, 86, PANEL_FILL, 0.94)
+      .setStrokeStyle(2, 0xf2c75c, 0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 8)
       .setVisible(false)
       .setAlpha(0);
     this.notificationText = scene.add
-      .text(GAME_WIDTH / 2 + 180, 192, '', this.textStyle(21, Palette.textLight, true))
+      .text(GAME_WIDTH / 2 + 70, 82, '', {
+        ...this.textStyle(21, Palette.textLight, true),
+        align: 'center',
+        wordWrap: { width: 700, useAdvancedWrap: true },
+      })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 9)
@@ -134,114 +161,62 @@ export class NormalGameplayHUD {
   }
 
   update(state: NormalGameplayHUDState): void {
-    const station = selectCurrentStation(state.stationProgress);
-    const location = station === null ? '' : this.getStationLocation(station.displayName);
+    const completed = Phaser.Math.Clamp(state.completedTaskCount, 0, state.totalTaskCount);
     const stateKey = [
-      station?.ordinal ?? 'none',
-      station?.displayName ?? '',
-      station?.photographed ?? false,
-      state.stationProgress.length,
-      state.stationPhotoCount,
-      state.stationPhotoGoal,
-      state.organismCount,
-      state.organismGoal,
+      completed,
+      state.totalTaskCount,
+      state.taskLabel,
+      state.actionKey,
+      state.actionEnglish,
+      state.actionLabel,
+      state.targetTextureKey ?? '',
+      state.targetLabel ?? '',
       i18n.getLocale(),
     ].join('|');
     if (stateKey === this.currentStateKey) return;
     this.currentStateKey = stateKey;
 
     this.missionChapter.setText(i18n.t('dive.hudChapter'));
-    this.missionTitle.setText(i18n.t('dive.hudMissionTitle'));
-    this.missionStation.setText(
-      station === null
-        ? i18n.t('dive.hudSurveyComplete')
-        : `${i18n.t('dive.hudStation')} ${station.ordinal} / ${state.stationProgress.length} · ${location}`,
+    this.missionProgressText.setText(
+      i18n
+        .t('dive.guidanceProgress')
+        .replace('{current}', String(completed))
+        .replace('{total}', String(state.totalTaskCount)),
     );
-    this.drawMissionPanel(state.stationPhotoCount, state.stationPhotoGoal);
-
-    this.updateCounter(
-      this.researchCounters[0]!,
-      i18n.t('dive.hudPhotoCounter'),
-      state.stationPhotoCount,
-      state.stationPhotoGoal,
+    this.missionTitle.setText(
+      i18n.t('dive.guidanceCurrentTask').replace('{task}', state.taskLabel),
     );
-    this.updateCounter(
-      this.researchCounters[1]!,
-      i18n.t('dive.hudSpeciesCounter'),
-      state.organismCount,
-      state.organismGoal,
+    this.actionKey.setText(state.actionKey);
+    this.actionPrefix.setText(i18n.getLocale() === 'en' ? 'Press' : '按');
+    this.actionEnglish.setText('');
+    this.actionLabel.setText(state.actionLabel);
+    const targetVisible = this.updateTargetCard(
+      state.targetTextureKey ?? null,
+      state.targetLabel ?? null,
     );
-  }
-
-  setInteraction(
-    station: HudInteraction | null,
-    subject: HudInteraction | null,
-    vessel: HudInteraction | null,
-  ): void {
-    const next = chooseHudInteraction(station, subject, vessel);
-    const currentKey = this.currentPrompt === null
-      ? ''
-      : `${this.currentPrompt.kind}|${this.currentPrompt.key}|${this.currentPrompt.label}`;
-    const nextKey = next === null ? '' : `${next.kind}|${next.key}|${next.label}`;
-    if (currentKey === nextKey) return;
-
-    this.currentPrompt = next;
-    this.scene.tweens.killTweensOf([
-      this.promptBackground,
-      this.promptKeycap,
-      this.promptKey,
-      this.promptLabel,
-    ]);
-    if (next === null) {
-      this.scene.tweens.add({
-        targets: [this.promptBackground, this.promptKeycap, this.promptKey, this.promptLabel],
-        alpha: 0,
-        y: '+=4',
-        duration: 180,
-        onComplete: () => {
-          this.setPromptVisible(false);
-          this.resetPromptY();
-        },
-      });
-      return;
-    }
-
-    this.promptKeycap.setFillStyle(next.kind === 'station' ? 0x5b4b25 : 0x123c50, 0.98);
-    this.promptKey.setText(next.key);
-    this.promptLabel.setText(next.label);
-    this.setPromptVisible(true);
-    this.promptBackground.setAlpha(0).setY(GAME_HEIGHT - 78);
-    this.promptKeycap.setAlpha(0).setY(GAME_HEIGHT - 78);
-    this.promptKey.setAlpha(0).setY(GAME_HEIGHT - 78);
-    this.promptLabel.setAlpha(0).setY(GAME_HEIGHT - 78);
-    this.scene.tweens.add({
-      targets: [this.promptBackground, this.promptKeycap, this.promptKey, this.promptLabel],
-      alpha: 1,
-      y: GAME_HEIGHT - 70,
-      duration: 200,
-      ease: 'Quad.easeOut',
-    });
+    this.updateActionLayout(state.actionKey === 'WASD', targetVisible);
+    this.drawMissionPanel(completed, state.totalTaskCount);
   }
 
   notify(message: string): void {
     this.scene.tweens.killTweensOf(this.notificationTweenTargets);
     this.notificationText.setText(message);
-    this.notificationBackground.setVisible(true).setAlpha(0).setY(200);
-    this.notificationText.setVisible(true).setAlpha(0).setY(200);
+    this.notificationBackground.setVisible(true).setAlpha(0).setY(90);
+    this.notificationText.setVisible(true).setAlpha(0).setY(90);
     this.notificationTweenTargets = [this.notificationBackground, this.notificationText];
     this.scene.tweens.add({
       targets: this.notificationTweenTargets,
       alpha: 1,
-      y: 192,
-      duration: 240,
+      y: 82,
+      duration: 220,
       ease: 'Quad.easeOut',
-      hold: 2200,
+      hold: 1800,
       onComplete: () => {
         this.scene.tweens.add({
           targets: this.notificationTweenTargets,
           alpha: 0,
-          y: 184,
-          duration: 360,
+          y: 74,
+          duration: 300,
           ease: 'Quad.easeIn',
           onComplete: () => {
             this.notificationBackground.setVisible(false);
@@ -260,114 +235,115 @@ export class NormalGameplayHUD {
 
   destroy(): void {
     this.oxygen.destroy();
-    this.controlsHint.destroy();
     this.missionPanel.destroy();
     this.missionChapter.destroy();
+    this.missionProgressText.destroy();
     this.missionTitle.destroy();
-    this.missionStation.destroy();
-    this.missionProgress.destroy();
-    for (const counter of this.researchCounters) {
-      counter.background.destroy();
-      counter.icon.destroy();
-      counter.label.destroy();
-      counter.value.destroy();
-    }
-    this.promptBackground.destroy();
-    this.promptKeycap.destroy();
-    this.promptKey.destroy();
-    this.promptLabel.destroy();
+    this.actionPrefix.destroy();
+    this.actionKeycap.destroy();
+    this.actionKey.destroy();
+    for (const keycap of this.movementKeycaps) keycap.destroy();
+    for (const key of this.movementKeys) key.destroy();
+    this.actionEnglish.destroy();
+    this.actionLabel.destroy();
+    this.targetCard.destroy();
+    this.targetImage.destroy();
+    this.targetLabel.destroy();
     this.notificationBackground.destroy();
     this.notificationText.destroy();
   }
 
-  private drawMissionPanel(current: number, goal: number): void {
-    const x = SAFE_MARGIN;
-    const y = 28;
-    const width = 450;
-    const height = 142;
-    const ratio = goal > 0 ? Phaser.Math.Clamp(current / goal, 0, 1) : 0;
+  private drawMissionPanel(current: number, total: number): void {
+    const ratio = total > 0 ? current / total : 0;
+    const left = PANEL_LEFT;
+    const top = PANEL_TOP;
+    const width = PANEL_WIDTH;
+    const height = PANEL_HEIGHT;
+    const progressLeft = left + 18;
+    const progressWidth = width - 36;
+    const progressY = top + height - 13;
+
     this.missionPanel.clear();
-    this.missionPanel.fillStyle(PANEL_FILL, PANEL_ALPHA);
-    this.missionPanel.fillRoundedRect(x, y, width, height, 12);
-    this.missionPanel.fillStyle(Palette.accent, 0.9);
-    this.missionPanel.fillRect(x, y + 18, 3, 80);
-    this.missionPanel.lineStyle(1, Palette.accent, 0.32);
-    this.missionPanel.lineBetween(x + 3, y + height, x + 158, y + height);
-    this.missionPanel.lineStyle(2, 0x1a4c5e, 0.95);
-    this.missionPanel.lineBetween(x + 18, y + 129, x + width - 18, y + 129);
-    this.missionPanel.lineStyle(2, Palette.accent, 0.9);
-    this.missionPanel.lineBetween(x + 18, y + 129, x + 18 + (width - 36) * ratio, y + 129);
-  }
+    this.missionPanel.fillStyle(0x01060b, 0.32);
+    this.missionPanel.fillRoundedRect(left + 8, top + 10, width, height, 18);
+    this.missionPanel.fillStyle(PANEL_FILL, 0.92);
+    this.missionPanel.fillRoundedRect(left, top, width, height, 18);
+    this.missionPanel.lineStyle(2, Palette.accent, 0.42);
+    this.missionPanel.strokeRoundedRect(left, top, width, height, 18);
+    this.missionPanel.fillStyle(Palette.gold, 0.96);
+    this.missionPanel.fillRoundedRect(left + 18, top + 7, 84, 5, 3);
 
-  private createCounter(x: number, y: number, icon: 'camera' | 'fish'): CounterVisual {
-    const background = this.scene.add
-      .rectangle(x, y, RESEARCH_COUNTER_WIDTH, RESEARCH_COUNTER_HEIGHT, PANEL_FILL, 0.66)
-      .setStrokeStyle(1, Palette.accent, 0.2)
-      .setOrigin(0)
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
-    const iconGraphic = this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH + 1);
-    this.drawResearchIcon(iconGraphic, x + 22, y + 27, icon);
-    const label = this.scene.add
-      .text(x + 42, y + 10, '', this.textStyle(12, Palette.textMuted, true))
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 1);
-    const value = this.scene.add
-      .text(x + 42, y + 30, '', this.textStyle(20, Palette.textLight, true))
-      .setScrollFactor(0)
-      .setDepth(HUD_DEPTH + 1);
-    return { background, icon: iconGraphic, label, value };
-  }
+    this.missionPanel.fillStyle(0x173f4d, 1);
+    this.missionPanel.fillRoundedRect(progressLeft, progressY, progressWidth, 7, 4);
+    this.missionPanel.fillStyle(Palette.accent, 1);
+    this.missionPanel.fillRoundedRect(progressLeft, progressY, progressWidth * ratio, 7, 4);
 
-  private updateCounter(counter: CounterVisual, label: string, current: number, goal: number): void {
-    counter.label.setText(label.toUpperCase());
-    counter.value.setText(`${Math.min(current, goal)} / ${goal}`);
-  }
-
-  private drawResearchIcon(graphic: Phaser.GameObjects.Graphics, x: number, y: number, icon: 'camera' | 'fish'): void {
-    graphic.clear();
-    if (icon === 'camera') {
-      graphic.lineStyle(2, 0x35d5d0, 0.95);
-      graphic.strokeRoundedRect(x - 13, y - 8, 26, 17, 4);
-      graphic.strokeCircle(x, y, 5);
-      graphic.lineBetween(x - 7, y - 12, x + 1, y - 12);
-      graphic.lineBetween(x - 5, y - 12, x - 2, y - 16);
-      return;
+    if (total <= 0) return;
+    for (let index = 0; index <= total; index += 1) {
+      const x = progressLeft + (progressWidth * index) / total;
+      this.missionPanel.fillStyle(index <= current ? Palette.accentSoft : 0x315764, 1);
+      this.missionPanel.fillCircle(x, progressY + 3.5, index === current ? 5 : 3.5);
     }
-
-    graphic.fillStyle(0xf2c75c, 0.95);
-    graphic.fillEllipse(x, y, 24, 12);
-    graphic.fillTriangle(x - 11, y, x - 19, y - 7, x - 19, y + 7);
-    graphic.fillTriangle(x + 8, y - 2, x + 15, y - 8, x + 15, y + 4);
-    graphic.fillStyle(PANEL_FILL, 1);
-    graphic.fillCircle(x + 7, y - 2, 1.5);
   }
 
-  private getStationLocation(displayName: string): string {
-    const separator = displayName.lastIndexOf('\u2014');
-    return separator >= 0 ? displayName.slice(separator + 1).trim() : displayName;
+  private updateTargetCard(textureKey: string | null, label: string | null): boolean {
+    const visible = textureKey !== null && label !== null && this.scene.textures.exists(textureKey);
+    this.targetCard.clear().setVisible(visible);
+    this.targetImage.setVisible(visible);
+    this.targetLabel.setVisible(visible);
+    if (!visible) return false;
+
+    const cardLeft = PANEL_LEFT + PANEL_WIDTH - 174;
+    const cardTop = PANEL_TOP + 98;
+    this.targetCard.fillStyle(0x173c32, 0.96);
+    this.targetCard.fillRoundedRect(cardLeft, cardTop, 156, 88, 14);
+    this.targetCard.lineStyle(2, 0xf0c95a, 0.72);
+    this.targetCard.strokeRoundedRect(cardLeft, cardTop, 156, 88, 14);
+    this.targetCard.fillStyle(0xf0c95a, 0.96);
+    this.targetCard.fillRoundedRect(cardLeft + 10, cardTop - 7, 64, 20, 8);
+
+    this.targetImage.setTexture(textureKey);
+    const source = this.scene.textures.get(textureKey).getSourceImage();
+    const scale = Math.min(62 / source.width, 48 / source.height);
+    this.targetImage
+      .setPosition(cardLeft + 45, cardTop + 49)
+      .setDisplaySize(source.width * scale, source.height * scale);
+    this.targetLabel.setPosition(cardLeft + 146, cardTop + 50).setText(label);
+    return true;
   }
 
-  private textStyle(fontSize: number, color: string, bold: boolean): Phaser.Types.GameObjects.Text.TextStyle {
+  private updateActionLayout(
+    movement: boolean,
+    targetVisible: boolean,
+  ): void {
+    this.actionKeycap.setVisible(!movement);
+    this.actionKey.setVisible(!movement);
+    for (const keycap of this.movementKeycaps) keycap.setVisible(movement);
+    for (const key of this.movementKeys) key.setVisible(movement);
+
+    const textX = PANEL_LEFT + (movement ? 300 : 176);
+    this.actionEnglish.setVisible(false).setX(textX);
+    this.actionLabel
+      .setX(textX)
+      .setY(PANEL_TOP + 143)
+      .setWordWrapWidth(
+        targetVisible
+          ? PANEL_LEFT + PANEL_WIDTH - 190 - textX
+          : PANEL_LEFT + PANEL_WIDTH - 24 - textX,
+        true,
+      );
+  }
+
+  private textStyle(
+    fontSize: number,
+    color: string,
+    bold: boolean,
+  ): Phaser.Types.GameObjects.Text.TextStyle {
     return {
       fontFamily: 'sans-serif',
       fontSize: `${fontSize}px`,
       color,
       fontStyle: bold ? 'bold' : 'normal',
     };
-  }
-
-  private setPromptVisible(visible: boolean): void {
-    this.promptBackground.setVisible(visible);
-    this.promptKeycap.setVisible(visible);
-    this.promptKey.setVisible(visible);
-    this.promptLabel.setVisible(visible);
-  }
-
-  private resetPromptY(): void {
-    this.promptBackground.setY(GAME_HEIGHT - 70);
-    this.promptKeycap.setY(GAME_HEIGHT - 70);
-    this.promptKey.setY(GAME_HEIGHT - 70);
-    this.promptLabel.setY(GAME_HEIGHT - 70);
   }
 }

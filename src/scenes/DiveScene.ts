@@ -21,16 +21,64 @@ import { TutorialOverlay } from '../ui/TutorialOverlay';
 import { HelpButton } from '../ui/HelpButton';
 import { FoodWebPuzzle, type FoodWebZoneId } from '../ui/FoodWebPuzzle';
 import { createResearchSurface, ResearchButton } from '../ui/ResearchUi';
+import {
+  ensureEdgeTransparentTexture,
+  ensureNormalizedTextureSequence,
+} from '../graphics/TextureFactory';
 import { saveService } from '../services/SaveService';
-import { historicalPhotoKeyForStation } from './OpeningModel';
-import type { HudInteraction } from '../ui/HudModel';
+import { experiencePreferences } from '../state/ExperiencePreferences';
+import {
+  currentPhotoKeyForStation,
+  getCreatureFramePlan,
+  historicalPhotoKeyForStation,
+} from './OpeningModel';
+import {
+  DIVE_FIELD_TASK_COUNT,
+  getDiveFieldTask,
+  getRequiredSpeciesForStation,
+  getTaskIndexForStation,
+  REQUIRED_DIVE_SPECIES_IDS,
+} from '../ui/DiveTaskModel';
 import type { DiveMap, Mission } from '../types';
 
 const EDGE_MARGIN = 70;
 const VESSEL = { x: 650, y: WATER_SURFACE_Y };
 const DIVER_START = { x: VESSEL.x, y: WATER_SURFACE_Y + 170 };
 const REQUIRED_STATION_PHOTOS = 3;
-const REQUIRED_ORGANISM_RECORDS = 3;
+
+interface ViewfinderPhotoSpec {
+  readonly speciesId: string;
+  readonly key: string;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly width: number;
+  readonly height: number;
+  readonly target?: boolean;
+  readonly grounded?: boolean;
+}
+
+interface ViewfinderFocusPhoto {
+  readonly image: Phaser.GameObjects.Image;
+  readonly speciesId: string;
+  x: number;
+  y: number;
+  readonly originX: number;
+  readonly originY: number;
+  readonly imageBaseX: number;
+  readonly imageBaseY: number;
+  floatTime: number;
+  readonly floatPhase: number;
+  readonly floatSpeed: number;
+  readonly floatWidth: number;
+  readonly floatHeight: number;
+  readonly swayAngle: number;
+  readonly grounded: boolean;
+  readonly isTarget: boolean;
+  readonly frameKeys: readonly string[];
+  readonly frameDurationMs: number;
+  frameElapsedMs: number;
+  frameIndex: number;
+}
 /**
  * Chapter 1 vertical slice: a calm, evidence-first field survey.
  *
@@ -53,25 +101,20 @@ export class DiveScene extends Phaser.Scene {
   private viewfinderOpen = false;
   private viewfinderKey: Phaser.Input.Keyboard.Key | null = null;
   private observationReviewKey: Phaser.Input.Keyboard.Key | null = null;
-  private viewfinderTarget: { id: string; displayName: string; distance: number } | null = null;
+  private fieldTaskIndex = 0;
+  private viewfinderTarget:
+    | { kind: 'station'; id: string; displayName: string; distance: number }
+    | {
+        kind: 'subject';
+        id: string;
+        stationId: string;
+        speciesId: string;
+        displayName: string;
+        distance: number;
+      }
+    | null = null;
   private viewfinderObjects: Phaser.GameObjects.GameObject[] = [];
-  private viewfinderFocusPhotos: Array<{
-    image: Phaser.GameObjects.Image;
-    x: number;
-    y: number;
-    originX: number;
-    originY: number;
-    imageBaseX: number;
-    imageBaseY: number;
-    floatTime: number;
-    floatPhase: number;
-    floatSpeed: number;
-    floatWidth: number;
-    floatHeight: number;
-    swayAngle: number;
-    grounded: boolean;
-    isTarget: boolean;
-  }> = [];
+  private viewfinderFocusPhotos: ViewfinderFocusPhoto[] = [];
   private viewfinderCrosshair: Phaser.GameObjects.Arc | null = null;
   private viewfinderCrosshairLines: Phaser.GameObjects.Graphics | null = null;
   private viewfinderTargetLabel: Phaser.GameObjects.Text | null = null;
@@ -93,7 +136,11 @@ export class DiveScene extends Phaser.Scene {
   private vesselReturnGuide: Phaser.GameObjects.Container | null = null;
   private overlayObjects: Phaser.GameObjects.GameObject[] = [];
   private lessonOverlayObjects: Phaser.GameObjects.GameObject[] = [];
+  private lessonOverlayTimers: Phaser.Time.TimerEvent[] = [];
   private foodWebPuzzle: FoodWebPuzzle | null = null;
+  private doBridgeNarrationPlayed = false;
+  private doBridgeNarrationCompleted = false;
+  private activeDoBridgeUtterance: SpeechSynthesisUtterance | null = null;
 
   private readonly onDepleted = (payload: GameEventMap['oxygen:depleted']): void => {
     if (this.viewfinderOpen) this.closeViewfinder();
@@ -133,6 +180,10 @@ export class DiveScene extends Phaser.Scene {
       this.closeViewfinder();
       return;
     }
+    // Report/lesson screens own a multi-step learning flow. Jumping straight
+    // to the chapter menu here used to destroy the final-question timer and
+    // leave a correct recap screen with no usable way forward.
+    if (this.reportOpen || this.briefingOpen || this.lessonOverlayObjects.length > 0) return;
     this.scene.start(SceneKeys.Menu);
   };
 
@@ -153,8 +204,12 @@ export class DiveScene extends Phaser.Scene {
     this.doReadingTaken = false;
     this.deviceNoticeShown = false;
     this.actionWasDown = false;
+    this.fieldTaskIndex = 0;
     this.observedSpecies.clear();
     this.pendingObservationReview = null;
+    this.doBridgeNarrationPlayed = false;
+    this.doBridgeNarrationCompleted = false;
+    this.activeDoBridgeUtterance = null;
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Dive });
     this.atmosphere = new Atmosphere(this, { showSurface: true });
     this.bounds = new Phaser.Geom.Rectangle(
@@ -179,6 +234,7 @@ export class DiveScene extends Phaser.Scene {
           ]),
       );
       this.mapView = new DiveMapView(this, map, labels);
+      this.syncGuidedTarget();
     }
 
     this.diver = new Diver(this, DIVER_START.x, DIVER_START.y);
@@ -187,7 +243,7 @@ export class DiveScene extends Phaser.Scene {
     this.oxygen = new OxygenSystem(this.mission?.id ?? 'unknown', budget);
 
     this.inputManager = new InputManager(this);
-    this.viewfinderKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.E) ?? null;
+    this.viewfinderKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE) ?? null;
     this.observationReviewKey =
       this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I) ?? null;
     this.createHud();
@@ -230,12 +286,18 @@ export class DiveScene extends Phaser.Scene {
       }
       return;
     }
-    if (this.viewfinderKey !== null && Phaser.Input.Keyboard.JustDown(this.viewfinderKey)) {
-      if (!this.paused && !this.reportOpen) {
-        if (this.viewfinderOpen) this.closeViewfinder();
-        else this.openViewfinder();
+    if (
+      !this.viewfinderOpen &&
+      this.viewfinderKey !== null &&
+      Phaser.Input.Keyboard.JustDown(this.viewfinderKey) &&
+      !this.paused &&
+      !this.reportOpen
+    ) {
+      const task = getDiveFieldTask(this.fieldTaskIndex);
+      if (task?.kind === 'station') {
+        this.openViewfinder();
+        return;
       }
-      return;
     }
     if (this.paused || this.reportOpen) return;
 
@@ -262,7 +324,6 @@ export class DiveScene extends Phaser.Scene {
       const pos = this.diver.getPosition();
       this.mapView?.update(pos.x, pos.y);
       this.updateAutomaticSurveyUnit(pos.x, pos.y);
-      this.updatePrompt(pos.x, pos.y);
 
       if (input.action && !this.actionWasDown) this.handleAction(pos.x, pos.y);
       this.updateHud(pos.x, pos.y);
@@ -277,12 +338,12 @@ export class DiveScene extends Phaser.Scene {
     this.reviewHintText = this.add
       .text(GAME_WIDTH - EDGE_MARGIN, 126, '', {
         fontFamily: 'sans-serif',
-        fontSize: '16px',
+        fontSize: '19px',
         color: '#f0c95a',
         backgroundColor: '#062838cc',
-        padding: { x: 10, y: 6 },
+        padding: { x: 14, y: 8 },
         align: 'right',
-        wordWrap: { width: 420, useAdvancedWrap: true },
+        wordWrap: { width: 470, useAdvancedWrap: true },
       })
       .setOrigin(1, 0)
       .setVisible(false)
@@ -297,10 +358,27 @@ export class DiveScene extends Phaser.Scene {
    */
   private applyDebugScreenRequest(map: DiveMap): boolean {
     const requested = new URLSearchParams(window.location.search).get('screen');
-    if (['report', 'food-chain', 'fish-oxygen', 'do'].includes(requested ?? '')) {
+    if (requested === 'recap') {
+      this.paused = true;
+      this.reportOpen = true;
+      this.time.delayedCall(180, () => this.showChapter1Recap());
+      return true;
+    }
+    if (['report', 'food-chain', 'food-lesson', 'fish-oxygen', 'do'].includes(requested ?? '')) {
       this.time.delayedCall(120, () => {
         this.completeChapter1();
-        if (requested === 'food-chain') this.time.delayedCall(80, () => this.showFoodChainLesson());
+        if (requested === 'report' && this.registry.get('__legacyComparison') === true) {
+          this.time.delayedCall(80, () => this.showPastPresentComparison());
+        }
+        if (requested === 'food-chain') {
+          this.time.delayedCall(80, () => {
+            this.destroyLessonOverlay();
+            this.setReportOverlayVisible(true);
+          });
+        }
+        if (requested === 'food-lesson') {
+          this.time.delayedCall(80, () => this.showFoodChainLesson());
+        }
         if (requested === 'fish-oxygen') this.time.delayedCall(80, () => this.showDoQuestion());
         if (requested === 'do') {
           this.time.delayedCall(80, () => {
@@ -311,10 +389,32 @@ export class DiveScene extends Phaser.Scene {
       });
       return true;
     }
+    const subjectMatch = /^subject-viewfinder([123])$/.exec(requested ?? '');
+    if (subjectMatch !== null) {
+      const station = map.cameraStations[Number(subjectMatch[1]) - 1];
+      if (station === undefined) return false;
+      const speciesId = getRequiredSpeciesForStation(station.id);
+      const subject = map.subjects.find((candidate) => candidate.speciesId === speciesId);
+      if (speciesId === null || subject === undefined) return false;
+      const taskIndex = getTaskIndexForStation(station.id);
+      if (taskIndex >= 0) {
+        this.fieldTaskIndex = taskIndex + 1;
+        this.syncGuidedTarget();
+      }
+      this.diver.setPosition(subject.x - 48, subject.y);
+      this.mapView?.update(subject.x - 48, subject.y);
+      this.time.delayedCall(120, () => this.openSubjectViewfinder(station.id, speciesId));
+      return true;
+    }
     const match = /^viewfinder([123])$/.exec(requested ?? '');
     if (match === null) return false;
     const station = map.cameraStations[Number(match[1]) - 1];
     if (station === undefined) return false;
+    const taskIndex = getTaskIndexForStation(station.id);
+    if (taskIndex >= 0) {
+      this.fieldTaskIndex = taskIndex;
+      this.syncGuidedTarget();
+    }
     this.diver.setPosition(station.x - 72, station.y);
     this.mapView?.update(station.x - 72, station.y);
     this.time.delayedCall(120, () => this.openViewfinder());
@@ -360,22 +460,35 @@ export class DiveScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0),
     );
+    // Keep the return target below the HUD. Its centre remains inside the
+    // vessel interaction radius, so the highlighted docking area is truthful
+    // while the vessel itself can stay in its natural surface position.
     const guideRing = this.add
-      .ellipse(0, -34, 350, 190, 0xf0c95a, 0.035)
+      .ellipse(0, 0, 260, 100, 0xf0c95a, 0.045)
       .setStrokeStyle(3, 0xf0c95a, 0.58);
     const guideArrow = this.add
-      .text(0, 72, '▲', {
+      .text(0, -64, '▲', {
         fontFamily: 'sans-serif',
         fontSize: '27px',
         color: '#f0c95a',
       })
       .setOrigin(0.5);
+    const guideLabel = this.add
+      .text(0, 32, i18n.t('dive.guidanceTaskReturn'), {
+        fontFamily: 'sans-serif',
+        fontSize: '18px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+        backgroundColor: '#062838dd',
+        padding: { x: 10, y: 5 },
+      })
+      .setOrigin(0.5);
     this.vesselReturnGuide = this.add
-      .container(VESSEL.x, VESSEL.y, [guideRing, guideArrow])
+      .container(VESSEL.x, VESSEL.y + 128, [guideRing, guideArrow, guideLabel])
       .setDepth(6)
       .setVisible(false);
     this.tweens.add({
-      targets: [guideRing, guideArrow],
+      targets: [guideRing, guideArrow, guideLabel],
       alpha: { from: 0.35, to: 0.9 },
       scale: { from: 0.96, to: 1.04 },
       duration: 1200,
@@ -387,16 +500,33 @@ export class DiveScene extends Phaser.Scene {
 
   private handleAction(x: number, y: number): void {
     if (this.mapView === null) return;
+    const task = getDiveFieldTask(this.fieldTaskIndex);
 
-    if (this.mapView.getNearestPhotographableStation(x, y) !== null) {
-      this.showStatus(i18n.t('dive.stationPhotoPrompt'));
-      return;
+    if (task?.kind === 'station') {
+      if (this.mapView.getNearestPhotographableStation(x, y, task.stationId) !== null) {
+        this.showStatus(i18n.t('dive.guidanceActionOpenViewfinder'));
+        return;
+      }
     }
 
-    const interaction = this.mapView.tryPhotographSubject(x, y);
-    if (interaction !== null) {
-      this.showStatus(`${i18n.t('dive.organismPhotoSaved')} ${this.mapView.recordedSubjectCount}`);
-      return;
+    if (task?.kind === 'subject') {
+      const interaction = this.mapView.tryPhotographSubject(x, y, task.speciesId);
+      if (interaction !== null) {
+        const species = this.getSpeciesLabel(task.speciesId);
+        this.cameras.main.flash(120, 255, 255, 255);
+        this.playShutterSound();
+        this.advanceFieldTask();
+        this.showStatus(i18n.t('dive.guidanceSubjectComplete').replace('{species}', species));
+        return;
+      }
+      if (this.mapView.hasNearbyPhotographableSubject(x, y)) {
+        this.showStatus(
+          i18n
+            .t('dive.guidanceWrongSubject')
+            .replace('{species}', this.getSpeciesLabel(task.speciesId)),
+        );
+        return;
+      }
     }
 
     if (this.isNearVessel(x, y)) {
@@ -406,34 +536,6 @@ export class DiveScene extends Phaser.Scene {
     }
 
     this.showStatus(i18n.t('dive.observeHint'));
-  }
-
-  private updatePrompt(x: number, y: number): void {
-    const stationTarget = this.mapView?.getNearestPhotographableStation(x, y);
-    const stationInteraction: HudInteraction | null =
-      stationTarget === null
-        ? null
-        : { kind: 'station', key: 'E', label: i18n.t('dive.hudEnterCamera') };
-    const subjectTarget = this.mapView?.getNearestPhotographableSubject(x, y) ?? null;
-    const subjectInteraction: HudInteraction | null =
-      subjectTarget === null
-        ? null
-        : {
-            kind: 'subject',
-            key: 'SPACE',
-            label: i18n.t('dive.subjectMission').replace('{species}', subjectTarget.label),
-          };
-    const vesselInteraction: HudInteraction | null = this.isNearVessel(x, y)
-      ? {
-          kind: 'vessel',
-          key: 'SPACE',
-          label: i18n.t(
-            this.isReadyToReturn() ? 'dive.hudReturnReady' : 'dive.hudReturnIncomplete',
-          ),
-        }
-      : null;
-    this.hud.setInteraction(stationInteraction, subjectInteraction, vesselInteraction);
-    this.vesselReturnGuide?.setVisible(this.isReadyToReturn());
   }
 
   /** One-page mission handoff shown immediately after the opening sequence. */
@@ -447,7 +549,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0)
       .setDepth(3000)
       .setInteractive();
-    const panel = createResearchSurface(this, cx, cy, 1510, 850, {
+    const panel = createResearchSurface(this, cx, cy, 1410, 660, {
       depth: 3001,
       fill: Palette.modal,
       border: Palette.accentSoft,
@@ -457,7 +559,7 @@ export class DiveScene extends Phaser.Scene {
       goldRail: true,
     });
     const eyebrow = this.add
-      .text(270, 145, i18n.t('dive.briefingEyebrow'), {
+      .text(320, 250, i18n.t('dive.briefingEyebrow'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#f0c95a',
@@ -465,7 +567,7 @@ export class DiveScene extends Phaser.Scene {
       })
       .setDepth(3003);
     const title = this.add
-      .text(cx, 220, i18n.t('dive.missionBriefTitle'), {
+      .text(cx, 330, i18n.t('dive.missionBriefTitle'), {
         fontFamily: 'sans-serif',
         fontSize: '43px',
         color: Palette.textLight,
@@ -475,56 +577,52 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(3003);
     const body = this.add
-      .text(cx, 286, i18n.t('dive.missionBriefBody'), {
+      .text(cx, 398, i18n.t('dive.missionBriefBody'), {
         fontFamily: 'sans-serif',
         fontSize: '22px',
         color: '#cce7ed',
         align: 'center',
-        wordWrap: { width: 1240, useAdvancedWrap: true },
+        wordWrap: { width: 1120, useAdvancedWrap: true },
       })
       .setOrigin(0.5)
       .setDepth(3003);
-    const cardCopy = [
-      'dive.missionBriefStation',
-      'dive.missionBriefSpecies',
-      'dive.missionBriefDevice',
-      'dive.missionBriefReturn',
-    ] as const;
-    const cardObjects: Phaser.GameObjects.GameObject[] = [];
-    cardCopy.forEach((key, index) => {
-      const x = 500 + (index % 2) * 920;
-      const y = 440 + Math.floor(index / 2) * 205;
-      const card = createResearchSurface(this, x, y, 790, 150, {
-        depth: 3002,
-        fill: Palette.cardSoft,
-        border: index === 3 ? Palette.gold : Palette.accentSoft,
-        borderAlpha: 0.48,
-        radius: 20,
-        shadow: false,
-      });
-      const number = this.add
-        .text(x - 330, y, String(index + 1).padStart(2, '0'), {
-          fontFamily: 'monospace',
-          fontSize: '24px',
-          color: index === 3 ? '#f0c95a' : Palette.accentText,
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5)
-        .setDepth(3003);
-      const copy = this.add
-        .text(x - 275, y, i18n.t(key), {
-          fontFamily: 'sans-serif',
-          fontSize: '21px',
-          color: Palette.textLight,
-          lineSpacing: 7,
-          wordWrap: { width: 640, useAdvancedWrap: true },
-        })
-        .setOrigin(0, 0.5)
-        .setDepth(3003);
-      cardObjects.push(card, number, copy);
+    const firstStepCard = createResearchSurface(this, cx, 555, 1120, 185, {
+      depth: 3002,
+      fill: Palette.cardSoft,
+      border: Palette.gold,
+      borderAlpha: 0.58,
+      radius: 22,
+      shadow: false,
     });
-    const hint = this.add
-      .text(cx, 785, i18n.t('dive.missionBriefHint'), {
+    const firstStepNumber = this.add
+      .text(cx - 475, 555, '01', {
+        fontFamily: 'monospace',
+        fontSize: '32px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(3003);
+    const firstStepTitle = this.add
+      .text(cx - 410, 515, i18n.t('dive.missionBriefFirstStep'), {
+        fontFamily: 'sans-serif',
+        fontSize: '27px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(3003);
+    const firstStepAction = this.add
+      .text(cx - 410, 574, i18n.t('dive.demoFirstStep'), {
+        fontFamily: 'sans-serif',
+        fontSize: '22px',
+        color: '#cce7ed',
+        wordWrap: { width: 810, useAdvancedWrap: true },
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(3003);
+    const progress = this.add
+      .text(cx, 682, i18n.t('dive.missionBriefProgress'), {
         fontFamily: 'sans-serif',
         fontSize: '20px',
         color: Palette.accentText,
@@ -533,7 +631,7 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3003);
-    const start = new ResearchButton(this, cx, 900, 430, 72, i18n.t('dive.startSurvey'), {
+    const start = new ResearchButton(this, cx, 780, 430, 72, i18n.t('dive.startSurvey'), {
       tone: 'primary',
       fontSize: 25,
       depth: 3004,
@@ -548,7 +646,19 @@ export class DiveScene extends Phaser.Scene {
         saveService.save(gameState.toSave());
       }
     });
-    this.overlayObjects = [dim, panel, eyebrow, title, body, ...cardObjects, hint, start.root];
+    this.overlayObjects = [
+      dim,
+      panel,
+      eyebrow,
+      title,
+      body,
+      firstStepCard,
+      firstStepNumber,
+      firstStepTitle,
+      firstStepAction,
+      progress,
+      start.root,
+    ];
   }
 
   /**
@@ -567,23 +677,94 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private updateHud(diverX: number, diverY: number): void {
-    const stationPhotos = this.mapView?.stationPhotoCount ?? 0;
-    const organismRecords = this.mapView?.recordedSubjectCount ?? 0;
+    const task = getDiveFieldTask(this.fieldTaskIndex);
+    const showEnglishControls = i18n.getLocale() === 'en';
+    let taskLabel = i18n.t('dive.guidanceTaskReturn');
+    let actionKey = 'WASD';
+    let actionEnglish = showEnglishControls ? 'MOVE' : '';
+    let actionLabel = i18n.t('dive.guidanceActionMoveDetailed');
+    let targetTextureKey: string | null = null;
+    let targetLabel: string | null = null;
+
+    if (task?.kind === 'station') {
+      const location = i18n.t(`dive.station${task.stationNumber}`);
+      const nearby =
+        this.mapView?.getNearestPhotographableStation(diverX, diverY, task.stationId) !== null;
+      taskLabel = i18n
+        .t(nearby ? 'dive.guidanceTaskPhotographStation' : 'dive.guidanceTaskTravelStation')
+        .replace('{location}', location);
+      actionKey = nearby ? 'SPACE' : 'WASD';
+      actionEnglish = showEnglishControls ? (nearby ? 'OPEN VIEWFINDER' : 'MOVE') : '';
+      actionLabel = i18n.t(
+        nearby ? 'dive.guidanceActionOpenViewfinder' : 'dive.guidanceActionMoveDetailed',
+      );
+    } else if (task?.kind === 'subject') {
+      const species = this.getSpeciesLabel(task.speciesId);
+      const location = i18n.t(`dive.station${task.stationNumber}`);
+      const nearby =
+        this.mapView?.getNearestPhotographableSubject(diverX, diverY, task.speciesId) !== null;
+      taskLabel = i18n
+        .t(nearby ? 'dive.guidanceTaskPhotographSubject' : 'dive.guidanceTaskFindSubject')
+        .replace('{location}', location)
+        .replace('{species}', species);
+      actionKey = nearby ? 'SPACE' : 'WASD';
+      actionEnglish = showEnglishControls ? (nearby ? 'TAKE PHOTO' : 'MOVE') : '';
+      actionLabel = i18n.t(
+        nearby ? 'dive.guidanceActionPhotograph' : 'dive.guidanceActionMoveDetailed',
+      );
+      targetTextureKey = this.getReportSpeciesTextureKey(task.speciesId);
+      targetLabel = `${i18n.t('dive.guidanceTarget')}\n${species}`;
+    } else if (this.isNearVessel(diverX, diverY)) {
+      actionKey = 'SPACE';
+      actionEnglish = showEnglishControls ? 'FINISH' : '';
+      actionLabel = i18n.t('dive.guidanceActionFinish');
+    }
+
     this.hud.update({
-      stationProgress: this.mapView?.getStationProgress(diverX, diverY) ?? [],
-      stationPhotoCount: stationPhotos,
-      stationPhotoGoal: REQUIRED_STATION_PHOTOS,
-      organismCount: organismRecords,
-      organismGoal: REQUIRED_ORGANISM_RECORDS,
+      completedTaskCount: this.fieldTaskIndex,
+      totalTaskCount: DIVE_FIELD_TASK_COUNT,
+      taskLabel,
+      actionKey,
+      actionEnglish,
+      actionLabel,
+      targetTextureKey,
+      targetLabel,
     });
+    this.vesselReturnGuide?.setVisible(task === null);
   }
 
   private isReadyToReturn(): boolean {
     return (
+      this.fieldTaskIndex >= DIVE_FIELD_TASK_COUNT &&
       (this.mapView?.stationPhotoCount ?? 0) >= REQUIRED_STATION_PHOTOS &&
-      (this.mapView?.recordedSubjectCount ?? 0) >= REQUIRED_ORGANISM_RECORDS &&
+      REQUIRED_DIVE_SPECIES_IDS.every(
+        (speciesId) => this.mapView?.hasPhotographedSpecies([speciesId]) === true,
+      ) &&
       this.doReadingTaken
     );
+  }
+
+  private advanceFieldTask(): void {
+    this.fieldTaskIndex = Math.min(this.fieldTaskIndex + 1, DIVE_FIELD_TASK_COUNT);
+    this.syncGuidedTarget();
+    // Refresh the persistent task card in the same frame as the completed
+    // photo. Otherwise the player briefly keeps seeing the old station task
+    // while the newly guided organism is already active in the world.
+    const position = this.diver.getPosition();
+    this.updateHud(position.x, position.y);
+  }
+
+  private syncGuidedTarget(): void {
+    const task = getDiveFieldTask(this.fieldTaskIndex);
+    if (task?.kind === 'station') {
+      this.mapView?.setGuidedTarget({ kind: 'station', stationId: task.stationId });
+      return;
+    }
+    if (task?.kind === 'subject') {
+      this.mapView?.setGuidedTarget({ kind: 'subject', speciesId: task.speciesId });
+      return;
+    }
+    this.mapView?.setGuidedTarget(null);
   }
 
   private isNearVessel(x: number, y: number): boolean {
@@ -719,47 +900,72 @@ export class DiveScene extends Phaser.Scene {
         add(
           this.add
             .text(oldX, cardY - 122, i18n.t('dive.storyThen'), {
-              fontFamily: 'sans-serif', fontSize: '23px', color: '#ffe58a', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '23px',
+              color: '#ffe58a',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(oldX, cardY + 122, i18n.t('dive.storyThenBody'), {
-              fontFamily: 'sans-serif', fontSize: '20px', color: Palette.textLight,
-              align: 'center', wordWrap: { width: 430, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '20px',
+              color: Palette.textLight,
+              align: 'center',
+              wordWrap: { width: 430, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY - 122, i18n.t('dive.storyToday'), {
-              fontFamily: 'sans-serif', fontSize: '23px', color: '#9cf7ef', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '23px',
+              color: '#9cf7ef',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY - 15, '?', {
-              fontFamily: 'sans-serif', fontSize: '108px', color: '#9cf7ef', fontStyle: 'bold',
+              fontFamily: 'sans-serif',
+              fontSize: '108px',
+              color: '#9cf7ef',
+              fontStyle: 'bold',
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(todayX, cardY + 116, i18n.t('dive.storyTodayBody'), {
-              fontFamily: 'sans-serif', fontSize: '20px', color: Palette.textLight,
-              align: 'center', wordWrap: { width: 430, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '20px',
+              color: Palette.textLight,
+              align: 'center',
+              wordWrap: { width: 430, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
         add(
           this.add
             .text(cx, top + 600, i18n.t('dive.briefingQuestion'), {
-              fontFamily: 'sans-serif', fontSize: '22px', color: Palette.accentText,
-              fontStyle: 'bold', align: 'center', wordWrap: { width: 1120, useAdvancedWrap: true },
+              fontFamily: 'sans-serif',
+              fontSize: '22px',
+              color: Palette.accentText,
+              fontStyle: 'bold',
+              align: 'center',
+              wordWrap: { width: 1120, useAdvancedWrap: true },
             })
-            .setOrigin(0.5).setDepth(3003),
+            .setOrigin(0.5)
+            .setDepth(3003),
         );
       } else if (page === 1) {
         add(
@@ -1020,8 +1226,8 @@ export class DiveScene extends Phaser.Scene {
 
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2;
-    const panelWidth = 1540;
-    const panelHeight = 900;
+    const panelWidth = 1740;
+    const panelHeight = 830;
     const top = cy - panelHeight / 2;
     const dim = this.add
       .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02060c, 0.78)
@@ -1032,77 +1238,17 @@ export class DiveScene extends Phaser.Scene {
       depth: 3001,
       goldRail: true,
     });
-    const title = this.add
-      .text(cx, top + 42, i18n.t('report.title'), {
-        fontFamily: 'sans-serif',
-        fontSize: '42px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setDepth(3002);
-    const subtitle = this.add
-      .text(cx, top + 91, i18n.t('report.subtitle'), {
-        fontFamily: 'sans-serif',
-        fontSize: '21px',
-        color: Palette.accentText,
-        align: 'center',
-        wordWrap: { width: panelWidth - 160, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(3002);
-
-    const evidenceItems = [
-      i18n.t('report.stationEvidence'),
-      i18n.t('report.organismEvidence'),
-      i18n.t('report.photoEvidence'),
-      i18n.t('report.doEvidence'),
-    ];
-    const evidenceObjects: Phaser.GameObjects.GameObject[] = [];
-    const evidenceWidth = 340;
-    evidenceItems.forEach((label, index) => {
-      const evidenceX = cx - 540 + index * 360;
-      const card = this.add
-        .rectangle(evidenceX, top + 142, evidenceWidth, 58, 0x123c50, 1)
-        .setStrokeStyle(2, 0x91e6a7, 0.55)
-        .setDepth(3002);
-      const check = this.add
-        .text(evidenceX - evidenceWidth / 2 + 18, top + 142, '✓', {
-          fontFamily: 'sans-serif',
-          fontSize: '20px',
-          color: '#91e6a7',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0, 0.5)
-        .setDepth(3003);
-      const text = this.add
-        .text(evidenceX + 8, top + 142, label, {
-          fontFamily: 'sans-serif',
-          fontSize: '15px',
-          color: Palette.textLight,
-          align: 'center',
-          wordWrap: { width: evidenceWidth - 58, useAdvancedWrap: true },
-        })
-        .setOrigin(0.5)
-        .setDepth(3003);
-      evidenceObjects.push(card, check, text);
-    });
-
     const puzzleSpecies = [
       'blue-damselfish',
       'hardy-goby',
       'reef-grouper',
       'silver-reef-fish',
-      'sea-cucumber',
-      'tube-sponge',
     ] as const;
     const zoneBySpecies: Readonly<Record<(typeof puzzleSpecies)[number], FoodWebZoneId>> = {
       'blue-damselfish': 'small-fish',
       'hardy-goby': 'small-fish',
       'silver-reef-fish': 'small-fish',
       'reef-grouper': 'predator',
-      'sea-cucumber': 'seabed',
-      'tube-sponge': 'seabed',
     };
     let foodWebComplete = false;
     let continueButton: Phaser.GameObjects.Text | null = null;
@@ -1110,23 +1256,22 @@ export class DiveScene extends Phaser.Scene {
       foodWebComplete = true;
       continueButton
         ?.setText(i18n.t('report.followBreathingClue'))
+        .setY(top + 670)
         .setBackgroundColor('#1c7a74')
         .setColor(Palette.textLight);
+      if (continueButton !== null) this.pulseTextAction(continueButton);
     };
     this.foodWebPuzzle = new FoodWebPuzzle(this, {
       x: cx,
-      y: top + 438,
-      width: panelWidth - 92,
-      height: 500,
+      y: top + 355,
+      width: panelWidth - 80,
+      height: 690,
       depth: 3002,
       cards: puzzleSpecies.map((speciesId) => {
-        const state = this.getFoodWebNodeState([speciesId], false);
         return {
           speciesId,
           label: this.getSpeciesLabel(speciesId),
           textureKey: this.getReportSpeciesTextureKey(speciesId),
-          status: state.label,
-          statusColor: state.color,
           zone: zoneBySpecies[speciesId],
         };
       }),
@@ -1145,70 +1290,19 @@ export class DiveScene extends Phaser.Scene {
       onComplete: unlockContinue,
     });
 
-    const callout = this.add
-      .rectangle(cx, top + 735, panelWidth - 116, 54, 0x0e3347, 1)
-      .setStrokeStyle(2, 0x3fd0c9, 0.55)
-      .setDepth(3001);
-    const calloutText = this.add
-      .text(cx, top + 735, i18n.t('report.callout'), {
-        fontFamily: 'sans-serif',
-        fontSize: '18px',
-        color: Palette.textLight,
-        align: 'center',
-        wordWrap: { width: panelWidth - 220, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(3002);
-    const note = this.add
-      .text(
-        cx,
-        top + 789,
-        `${i18n.t('report.qualified')} · ${i18n.t('report.nextStep')}\n${i18n.t('report.note')}`,
-        {
-          fontFamily: 'sans-serif',
-          fontSize: '16px',
-          color: Palette.textMuted,
-          align: 'center',
-          wordWrap: { width: panelWidth - 220, useAdvancedWrap: true },
-        },
-      )
-      .setOrigin(0.5)
-      .setDepth(3002);
     const button = this.add
-      .text(cx, top + 850, i18n.t('report.foodWebLocked'), {
+      .text(cx, top + 760, i18n.t('report.foodWebLocked'), {
         fontFamily: 'sans-serif',
-        fontSize: '22px',
+        fontSize: '29px',
         color: Palette.textLight,
         backgroundColor: '#24404b',
-        padding: { x: 30, y: 13 },
+        padding: { x: 44, y: 18 },
         fontStyle: 'bold',
       })
       .setOrigin(0.5)
       .setDepth(3002)
       .setInteractive({ useHandCursor: true });
-    const backButton = this.add
-      .text(cx - 600, top + 850, i18n.t('common.backStep'), {
-        fontFamily: 'sans-serif',
-        fontSize: '21px',
-        color: Palette.textLight,
-        backgroundColor: '#123c50',
-        padding: { x: 26, y: 13 },
-      })
-      .setOrigin(0.5)
-      .setDepth(3003)
-      .setInteractive({ useHandCursor: true });
-    this.overlayObjects = [
-      dim,
-      panel,
-      title,
-      subtitle,
-      ...evidenceObjects,
-      callout,
-      calloutText,
-      note,
-      button,
-      backButton,
-    ];
+    this.overlayObjects = [dim, panel, button];
     continueButton = button;
     button.on(Phaser.Input.Events.POINTER_UP, () => {
       if (!foodWebComplete) {
@@ -1218,9 +1312,12 @@ export class DiveScene extends Phaser.Scene {
       this.setReportOverlayVisible(false);
       this.showDoQuestion();
     });
-    backButton.on(Phaser.Input.Events.POINTER_UP, () => this.showFoodChainLesson());
-    this.sharpenVisibleText();
+    // The six-card activity is the assessment. First teach the one rule it
+    // depends on in a short, hands-on three-card example, then reveal this
+    // already-created puzzle underneath it.
+    this.setReportOverlayVisible(false);
     this.showPastPresentComparison();
+    this.sharpenVisibleText();
   }
 
   private showPastPresentComparison(): void {
@@ -1241,6 +1338,19 @@ export class DiveScene extends Phaser.Scene {
       },
     ] as const;
     let page = 0;
+    const viewedStations = new Set<string>();
+    let galleryContinue: ResearchButton | null = null;
+    let galleryProgress: Phaser.GameObjects.Text | null = null;
+
+    const refreshGalleryGate = (): void => {
+      const complete = viewedStations.size === 3;
+      galleryProgress
+        ?.setText(
+          i18n.t('report.todayGalleryProgress').replace('{done}', String(viewedStations.size)),
+        )
+        .setColor(complete ? '#91e6a7' : '#f0c95a');
+      galleryContinue?.setEnabled(complete).setTone(complete ? 'primary' : 'locked');
+    };
 
     const render = (): void => {
       this.destroyLessonOverlay();
@@ -1296,6 +1406,11 @@ export class DiveScene extends Phaser.Scene {
             270,
             4102,
             `${index + 1} · ${i18n.t(`dive.station${index + 1}`)}`,
+            viewedStations.has(stationId),
+            () => {
+              viewedStations.add(stationId);
+              refreshGalleryGate();
+            },
           ),
         );
       });
@@ -1313,24 +1428,46 @@ export class DiveScene extends Phaser.Scene {
       if (page === 0) {
         add(
           this.add
-            .text(GAME_WIDTH / 2, 640, `${i18n.t('common.stepLabel')} ${i18n.t('report.todayGalleryStep')}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '25px',
-              color: '#e6fbff',
-              fontStyle: 'bold',
-              align: 'center',
-            })
+            .text(
+              GAME_WIDTH / 2,
+              640,
+              `${i18n.t('common.stepLabel')} ${i18n.t('report.todayGalleryStep')}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '25px',
+                color: '#e6fbff',
+                fontStyle: 'bold',
+                align: 'center',
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4104),
         );
         add(
           this.add
-            .text(GAME_WIDTH / 2, 700, `${i18n.t('common.tipLabel')} ${i18n.t('report.todayGalleryTip')}`, {
+            .text(
+              GAME_WIDTH / 2,
+              700,
+              `${i18n.t('common.tipLabel')} ${i18n.t('report.todayGalleryTip')}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '22px',
+                color: Palette.textMuted,
+                align: 'center',
+                wordWrap: { width: 1160, useAdvancedWrap: true },
+              },
+            )
+            .setOrigin(0.5)
+            .setDepth(4104),
+        );
+        galleryProgress = add(
+          this.add
+            .text(GAME_WIDTH / 2, 755, '', {
               fontFamily: 'sans-serif',
               fontSize: '22px',
-              color: Palette.textMuted,
+              color: '#f0c95a',
+              fontStyle: 'bold',
               align: 'center',
-              wordWrap: { width: 1160, useAdvancedWrap: true },
             })
             .setOrigin(0.5)
             .setDepth(4104),
@@ -1344,23 +1481,34 @@ export class DiveScene extends Phaser.Scene {
           i18n.t('report.todayGalleryContinue'),
           { tone: 'primary', fontSize: 25, depth: 4105 },
         );
+        galleryContinue = next;
         add(next.root);
         next.onPress(() => {
+          if (viewedStations.size < 3) {
+            galleryProgress?.setText(i18n.t('report.todayGalleryNeedAll')).setColor('#ffcf78');
+            return;
+          }
           page = 1;
           render();
         });
+        refreshGalleryGate();
       } else {
         const current = questions[page - 1] ?? questions[0];
         add(
           this.add
-            .text(GAME_WIDTH / 2, 640, `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '27px',
-              color: '#e9fbff',
-              fontStyle: 'bold',
-              align: 'center',
-              wordWrap: { width: 1240, useAdvancedWrap: true },
-            })
+            .text(
+              GAME_WIDTH / 2,
+              640,
+              `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`,
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '34px',
+                color: '#e9fbff',
+                fontStyle: 'bold',
+                align: 'center',
+                wordWrap: { width: 1240, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4104),
         );
@@ -1368,7 +1516,7 @@ export class DiveScene extends Phaser.Scene {
           this.add
             .text(520, 705, i18n.t('common.optionsLabel'), {
               fontFamily: 'sans-serif',
-              fontSize: '22px',
+              fontSize: '29px',
               color: '#f0c95a',
               fontStyle: 'bold',
             })
@@ -1388,12 +1536,12 @@ export class DiveScene extends Phaser.Scene {
         current.choices.forEach((choice, choiceIndex) => {
           const button = new ResearchButton(
             this,
-            690 + choiceIndex * 560,
+            670 + choiceIndex * 580,
             800,
-            490,
-            78,
+            530,
+            110,
             `${choiceIndex === 0 ? 'A' : 'B'}. ${i18n.t(choice)}`,
-            { tone: 'secondary', fontSize: 23, depth: 4105 },
+            { tone: 'secondary', fontSize: 27, lineSpacing: 6, depth: 4105 },
           );
           add(button.root);
           button.onPress(() => {
@@ -1426,24 +1574,39 @@ export class DiveScene extends Phaser.Scene {
     height: number,
     depth: number,
     title: string,
+    alreadyViewed: boolean,
+    onViewed: () => void,
   ): Phaser.GameObjects.GameObject[] {
-    const todayObjects = this.createViewfinderEnvironment(
-      stationId,
-      x - width / 2,
-      y - height / 2,
-      width,
-      height,
-      depth,
-    );
-    const scale = 0.42;
-    for (const spec of this.getViewfinderPhotos(stationId)) {
-      if (!this.textures.exists(spec.key)) continue;
-      const image = this.add
-        .image(x + spec.offsetX * scale, y + spec.offsetY * scale, spec.key)
-        .setDisplaySize(spec.width * scale, spec.height * scale)
-        .setDepth(depth + 3);
-      if (this.shouldFlipViewfinderPhoto(spec.key)) image.setFlipX(true);
-      todayObjects.push(image);
+    const todayObjects: Phaser.GameObjects.GameObject[] = [];
+    const currentPhotoKey = currentPhotoKeyForStation(stationId);
+    const currentPhoto =
+      currentPhotoKey === null
+        ? null
+        : this.addHistoricalPhoto(currentPhotoKey, x, y, width - 18, height - 18, depth + 3);
+    if (currentPhoto !== null) {
+      todayObjects.push(currentPhoto);
+    } else {
+      todayObjects.push(
+        ...this.createViewfinderEnvironment(
+          stationId,
+          x - width / 2,
+          y - height / 2,
+          width,
+          height,
+          depth,
+          false,
+        ),
+      );
+      const scale = 0.42;
+      for (const spec of this.getViewfinderPhotos(stationId)) {
+        if (!this.textures.exists(spec.key)) continue;
+        const image = this.add
+          .image(x + spec.offsetX * scale, y + spec.offsetY * scale, spec.key)
+          .setDisplaySize(spec.width * scale, spec.height * scale)
+          .setDepth(depth + 3);
+        if (this.shouldFlipViewfinderSpecies(spec.speciesId)) image.setFlipX(true);
+        todayObjects.push(image);
+      }
     }
     const objects: Phaser.GameObjects.GameObject[] = [];
     const frame = createResearchSurface(this, x, y, width + 18, height + 18, {
@@ -1467,21 +1630,21 @@ export class DiveScene extends Phaser.Scene {
     const eraBadge = this.add
       .text(x + width / 2 - 18, y - height / 2 + 18, i18n.t('report.photoToggleToday'), {
         fontFamily: 'sans-serif',
-        fontSize: '16px',
+        fontSize: '20px',
         color: '#ffffff',
         fontStyle: 'bold',
         backgroundColor: '#1c7a74dd',
-        padding: { x: 13, y: 7 },
+        padding: { x: 15, y: 8 },
       })
       .setOrigin(1, 0)
       .setDepth(depth + 5);
     const toggleHint = this.add
       .text(x, y + height / 2 - 16, i18n.t('report.photoToggleHint'), {
         fontFamily: 'sans-serif',
-        fontSize: '15px',
+        fontSize: '19px',
         color: '#ffffff',
         backgroundColor: '#04121fcc',
-        padding: { x: 12, y: 6 },
+        padding: { x: 15, y: 8 },
       })
       .setOrigin(0.5, 1)
       .setDepth(depth + 5);
@@ -1489,9 +1652,26 @@ export class DiveScene extends Phaser.Scene {
       .rectangle(x, y, width, height, 0xffffff, 0.001)
       .setDepth(depth + 6)
       .setInteractive({ useHandCursor: true });
+    const viewedBadge = this.add
+      .text(x - width / 2 + 18, y - height / 2 + 18, '✓', {
+        fontFamily: 'sans-serif',
+        fontSize: '21px',
+        color: '#07251f',
+        backgroundColor: '#91e6a7',
+        padding: { x: 9, y: 4 },
+        fontStyle: 'bold',
+      })
+      .setDepth(depth + 7)
+      .setVisible(alreadyViewed);
     let showingHistory = false;
+    let viewed = alreadyViewed;
     hitArea.on(Phaser.Input.Events.POINTER_UP, () => {
       if (historyImage === null) return;
+      if (!viewed) {
+        viewed = true;
+        viewedBadge.setVisible(true);
+        onViewed();
+      }
       showingHistory = !showingHistory;
       todayObjects.forEach((object) => {
         const visibleObject = object as Phaser.GameObjects.GameObject & {
@@ -1521,6 +1701,7 @@ export class DiveScene extends Phaser.Scene {
         .setDepth(depth + 4),
       eraBadge,
       toggleHint,
+      viewedBadge,
       hitArea,
     );
     return objects;
@@ -1654,13 +1835,18 @@ export class DiveScene extends Phaser.Scene {
         drawFishGroup(x + 104, 444, station.newCount, 0x67d8d1);
         add(
           this.add
-            .text(x, 535, i18n.t(index === 2 ? 'report.compareSeabedNote' : 'report.compareFishNote'), {
-              fontFamily: 'sans-serif',
-              fontSize: '18px',
-              color: Palette.textMuted,
-              align: 'center',
-              wordWrap: { width: 330, useAdvancedWrap: true },
-            })
+            .text(
+              x,
+              535,
+              i18n.t(index === 2 ? 'report.compareSeabedNote' : 'report.compareFishNote'),
+              {
+                fontFamily: 'sans-serif',
+                fontSize: '18px',
+                color: Palette.textMuted,
+                align: 'center',
+                wordWrap: { width: 330, useAdvancedWrap: true },
+              },
+            )
             .setOrigin(0.5)
             .setDepth(4102),
         );
@@ -1670,7 +1856,7 @@ export class DiveScene extends Phaser.Scene {
         this.add
           .text(GAME_WIDTH / 2, 650, i18n.t(current.question), {
             fontFamily: 'sans-serif',
-            fontSize: '30px',
+            fontSize: '34px',
             color: '#e9fbff',
             fontStyle: 'bold',
             align: 'center',
@@ -1695,12 +1881,13 @@ export class DiveScene extends Phaser.Scene {
           this.add
             .text(700 + choiceIndex * 520, 785, i18n.t(choice), {
               fontFamily: 'sans-serif',
-              fontSize: '23px',
+              fontSize: '27px',
               color: Palette.textLight,
               backgroundColor: '#123c50',
-              padding: { x: 30, y: 17 },
+              padding: { x: 32, y: 20 },
               align: 'center',
-              wordWrap: { width: 420, useAdvancedWrap: true },
+              lineSpacing: 6,
+              wordWrap: { width: 440, useAdvancedWrap: true },
             })
             .setOrigin(0.5)
             .setDepth(4103)
@@ -1767,7 +1954,7 @@ export class DiveScene extends Phaser.Scene {
           color: '#d8f5f4',
           align: 'center',
           lineSpacing: 8,
-          wordWrap: { width: 1040, useAdvancedWrap: true },
+          wordWrap: { width: 1300, useAdvancedWrap: false },
         })
         .setOrigin(0.5)
         .setDepth(4102),
@@ -1839,19 +2026,12 @@ export class DiveScene extends Phaser.Scene {
     );
     let step = 0;
     const foodChainProgress = (done: number): string =>
-      i18n
-        .t('report.foodLessonProgress')
-        .replace('{done}', String(done))
-        .replace('{total}', '3');
-    const button = new ResearchButton(
-      this,
-      GAME_WIDTH / 2,
-      875,
-      430,
-      70,
-      foodChainProgress(0),
-      { tone: 'locked', fontSize: 26, depth: 4103 },
-    );
+      i18n.t('report.foodLessonProgress').replace('{done}', String(done)).replace('{total}', '3');
+    const button = new ResearchButton(this, GAME_WIDTH / 2, 875, 430, 70, foodChainProgress(0), {
+      tone: 'locked',
+      fontSize: 26,
+      depth: 4103,
+    });
     add(button.root);
     button.onPress(() => {
       if (step < 3) {
@@ -1869,7 +2049,7 @@ export class DiveScene extends Phaser.Scene {
         label: i18n.t('report.foodWebLargerFish'),
         color: 0x5a4a2c,
         x: 570,
-        textureKey: 'chapter1-subject-reef-grouper',
+        textureKey: this.getReportSpeciesTextureKey('reef-grouper'),
       },
       {
         expected: 0,
@@ -1883,7 +2063,7 @@ export class DiveScene extends Phaser.Scene {
         label: i18n.t('report.foodWebSmallFish'),
         color: 0x15506a,
         x: 1350,
-        textureKey: 'chapter1-subject-blue-damselfish',
+        textureKey: this.getReportSpeciesTextureKey('blue-damselfish'),
       },
     ] as const;
     cards.forEach((card) => {
@@ -1908,12 +2088,12 @@ export class DiveScene extends Phaser.Scene {
         })
         .setOrigin(0.5);
       const children: Phaser.GameObjects.GameObject[] = [cardBack];
-      if (this.textures.exists(card.textureKey)) {
+      if (card.textureKey !== null && this.textures.exists(card.textureKey)) {
         const source = this.textures.get(card.textureKey).getSourceImage();
-        const imageScale = Math.min(128 / source.width, 64 / source.height);
+        const imageScale = Math.min(164 / source.width, 78 / source.height);
         children.push(
           this.add
-            .image(0, -26, card.textureKey)
+            .image(0, -28, card.textureKey)
             .setDisplaySize(source.width * imageScale, source.height * imageScale),
         );
       }
@@ -1969,20 +2149,18 @@ export class DiveScene extends Phaser.Scene {
         button.setText(i18n.t('report.foodLessonStart')).setTone('primary');
       });
     });
-    const back = new ResearchButton(this, 430, 875, 260, 64, i18n.t('common.backStep'), {
-      tone: 'secondary',
-      fontSize: 22,
-      depth: 4105,
-    });
-    add(back.root);
-    back.onPress(() => this.showPastPresentComparison());
     this.lessonOverlayObjects = objects;
     this.sharpenVisibleText();
   }
 
   private showChapter1Recap(): void {
     this.destroyLessonOverlay();
-    const questions = [
+    const questions: ReadonlyArray<{
+      question: string;
+      choices: readonly [string, string];
+      correct: number;
+      correctFeedback?: string;
+    }> = [
       {
         question: 'report.recap.q1',
         choices: ['report.recap.q1a', 'report.recap.q1b'],
@@ -1998,11 +2176,19 @@ export class DiveScene extends Phaser.Scene {
         choices: ['report.recap.q3a', 'report.recap.q3b'],
         correct: 0,
       },
-    ] as const;
+      {
+        question: 'report.recap.q4',
+        choices: ['report.recap.q4a', 'report.recap.q4b'],
+        correct: 0,
+        correctFeedback: 'report.recapFoodWebOutcome',
+      },
+    ];
     let index = 0;
+    let transitioning = false;
     let pageObjects: Phaser.GameObjects.GameObject[] = [];
 
     const render = (): void => {
+      transitioning = false;
       for (const object of pageObjects) object.destroy();
       pageObjects = [];
       const add = <T extends Phaser.GameObjects.GameObject>(object: T): T => {
@@ -2010,6 +2196,7 @@ export class DiveScene extends Phaser.Scene {
         return object;
       };
       const current = questions[index] ?? questions[0];
+      if (current === undefined) return;
       add(
         this.add
           .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02060c, 0.82)
@@ -2019,39 +2206,49 @@ export class DiveScene extends Phaser.Scene {
       );
       add(
         this.add
-          .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 1220, 720, 0x0a2a43, 0.99)
+          .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 1480, 720, 0x0a2a43, 0.99)
           .setStrokeStyle(3, Palette.accent)
           .setDepth(3001),
       );
       add(
         this.add
-          .text(GAME_WIDTH / 2, 240, `${i18n.t('report.recapTitle')}  ${index + 1}/3`, {
-            fontFamily: 'sans-serif',
-            fontSize: '42px',
-            color: Palette.textLight,
-            fontStyle: 'bold',
-          })
+          .text(
+            GAME_WIDTH / 2,
+            240,
+            `${i18n.t('report.recapTitle')}  ${index + 1}/${questions.length}`,
+            {
+              fontFamily: 'sans-serif',
+              fontSize: '42px',
+              color: Palette.textLight,
+              fontStyle: 'bold',
+            },
+          )
           .setOrigin(0.5)
           .setDepth(3002),
       );
       add(
         this.add
-          .text(GAME_WIDTH / 2, 350, `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`, {
-            fontFamily: 'sans-serif',
-            fontSize: '32px',
-            color: '#dff9fb',
-            align: 'center',
-            wordWrap: { width: 980, useAdvancedWrap: true },
-            lineSpacing: 8,
-          })
+          .text(
+            GAME_WIDTH / 2,
+            350,
+            `${i18n.t('common.questionLabel')} ${i18n.t(current.question)}`,
+            {
+              fontFamily: 'sans-serif',
+              fontSize: '34px',
+              color: '#dff9fb',
+              align: 'center',
+              wordWrap: { width: 1380, useAdvancedWrap: true },
+              lineSpacing: 8,
+            },
+          )
           .setOrigin(0.5)
           .setDepth(3002),
       );
       add(
         this.add
-          .text(570, 435, i18n.t('common.optionsLabel'), {
+          .text(300, 435, i18n.t('common.optionsLabel'), {
             fontFamily: 'sans-serif',
-            fontSize: '22px',
+            fontSize: '29px',
             color: '#f0c95a',
             fontStyle: 'bold',
           })
@@ -2061,41 +2258,79 @@ export class DiveScene extends Phaser.Scene {
         this.add
           .text(GAME_WIDTH / 2, 720, '', {
             fontFamily: 'sans-serif',
-            fontSize: '23px',
+            fontSize: '26px',
             color: '#91e6a7',
             align: 'center',
             wordWrap: { width: 900, useAdvancedWrap: true },
+            padding: { x: 18, y: 12 },
           })
           .setOrigin(0.5)
           .setDepth(3002),
       );
+      const continueButton = new ResearchButton(
+        this,
+        1160,
+        810,
+        390,
+        66,
+        i18n.t('report.continueChapter2'),
+        { tone: 'primary', fontSize: 24, depth: 3004 },
+      );
+      continueButton.root.setVisible(false).setActive(false);
+      continueButton.onPress(() => {
+        if (!transitioning || index < questions.length - 1) return;
+        this.enterChapter2();
+      });
+      add(continueButton.root);
+      const choiceButtons: ResearchButton[] = [];
       current.choices.forEach((choice, choiceIndex) => {
-        const button = add(
-          this.add
-            .text(GAME_WIDTH / 2, 510 + choiceIndex * 104, `${choiceIndex === 0 ? 'A' : 'B'}. ${i18n.t(choice)}`, {
-              fontFamily: 'sans-serif',
-              fontSize: '25px',
-              color: Palette.textLight,
-              backgroundColor: '#123c50',
-              padding: { x: 32, y: 17 },
-              align: 'center',
-              wordWrap: { width: 840, useAdvancedWrap: true },
-            })
-            .setOrigin(0.5)
-            .setDepth(3002)
-            .setInteractive({ useHandCursor: true }),
+        const button = new ResearchButton(
+          this,
+          610 + choiceIndex * 700,
+          565,
+          620,
+          140,
+          `${choiceIndex === 0 ? 'A' : 'B'}. ${i18n.t(choice)}`,
+          { tone: 'secondary', fontSize: 28, lineSpacing: 8, depth: 3002 },
         );
-        button.on(Phaser.Input.Events.POINTER_UP, () => {
+        choiceButtons.push(button);
+        add(button.root);
+        button.onPress(() => {
+          if (transitioning) return;
           const correct = choiceIndex === current.correct;
-          button.setBackgroundColor(correct ? '#1c7a74' : '#73423e');
-          feedback.setText(i18n.t(correct ? 'report.recapCorrect' : 'report.recapTryAgain'));
-          if (!correct) return;
+          button.setTone(correct ? 'primary' : 'danger');
+          const feedbackKey =
+            correct && current.correctFeedback !== undefined
+              ? current.correctFeedback
+              : correct
+                ? 'report.recapCorrect'
+                : 'report.recapTryAgain';
+          feedback
+            .setColor(correct ? '#d8fffb' : '#fff3b0')
+            .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
+            .setText(i18n.t(feedbackKey));
+          if (!correct) {
+            this.tweens.add({
+              targets: button.root,
+              x: { from: button.root.x - 10, to: button.root.x + 10 },
+              duration: 70,
+              yoyo: true,
+              repeat: 2,
+              onComplete: () => {
+                if (button.root.active && !transitioning) button.setTone('secondary');
+              },
+            });
+            return;
+          }
+          transitioning = true;
+          for (const choiceButton of choiceButtons) choiceButton.setEnabled(false);
+          if (index >= questions.length - 1) {
+            continueButton.root.setVisible(true).setActive(true);
+            return;
+          }
           this.time.delayedCall(650, () => {
-            if (index >= questions.length - 1) this.enterChapter2();
-            else {
-              index += 1;
-              render();
-            }
+            index += 1;
+            render();
           });
         });
       });
@@ -2113,6 +2348,7 @@ export class DiveScene extends Phaser.Scene {
           .setInteractive({ useHandCursor: true }),
       );
       back.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (transitioning) return;
         if (index === 0) this.showDoBridge();
         else {
           index -= 1;
@@ -2170,112 +2406,49 @@ export class DiveScene extends Phaser.Scene {
         .setDepth(3002),
     );
 
-    let fishVisual: Phaser.GameObjects.GameObject | null = null;
-    if (this.textures.exists('chapter1-subject-blue-damselfish')) {
-      const source = this.textures.get('chapter1-subject-blue-damselfish').getSourceImage();
-      const scale = Math.min(280 / source.width, 150 / source.height);
-      fishVisual = add(
-        this.add
-          .image(1030, 465, 'chapter1-subject-blue-damselfish')
-          .setDisplaySize(source.width * scale, source.height * scale)
-          .setDepth(3003),
+    const fishFrameKeys = this.getCreatureDisplayFrameKeys('blue-damselfish');
+    const fishTextureKey = fishFrameKeys[0] ?? null;
+    if (fishTextureKey !== null && this.textures.exists(fishTextureKey)) {
+      const fishImage = this.addHistoricalPhoto(
+        fishTextureKey,
+        GAME_WIDTH / 2,
+        465,
+        430,
+        235,
+        3003,
       );
+      if (fishImage !== null) {
+        // The complete frame sequence supplies continuous body and fin motion.
+        fishImage.setFlipX(true);
+        add(fishImage);
+        const framePlan = getCreatureFramePlan('blue-damselfish');
+        if (fishFrameKeys.length > 1 && framePlan !== null) {
+          let frameIndex = 0;
+          this.lessonOverlayTimers.push(
+            this.time.addEvent({
+              delay: framePlan.frameDurationMs,
+              loop: true,
+              callback: () => {
+                frameIndex = (frameIndex + 1) % fishFrameKeys.length;
+                const frameKey = fishFrameKeys[frameIndex];
+                if (frameKey !== undefined && fishImage.active) fishImage.setTexture(frameKey);
+              },
+            }),
+          );
+        }
+      }
     } else {
       const fish = add(this.add.graphics().setDepth(3003));
-      fish.fillStyle(0x67d8d1, 1).fillEllipse(1030, 465, 210, 100);
-      fish.fillTriangle(930, 465, 865, 420, 865, 510);
-      fishVisual = fish;
-    }
-    if (fishVisual !== null) {
-      this.tweens.add({
-        targets: fishVisual,
-        y: '+=8',
-        angle: { from: -1.2, to: 1.2 },
-        duration: 1250,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.InOut',
-      });
-    }
-    const gill = add(
-      this.add
-        .ellipse(1092, 466, 18, 62, 0xf0c95a, 0.08)
-        .setStrokeStyle(4, 0xf0c95a, 0.95)
-        .setDepth(3004),
-    );
-    this.tweens.add({
-      targets: gill,
-      scaleX: { from: 0.45, to: 1.2 },
-      alpha: { from: 0.45, to: 1 },
-      duration: 680,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.InOut',
-    });
-    const scaleMarker = add(
-      this.add
-        .ellipse(1015, 465, 86, 58, 0x3fd0c9, 0.04)
-        .setStrokeStyle(3, 0x8ce8df, 0.82)
-        .setDepth(3004),
-    );
-    const anatomyArrows = add(this.add.graphics().setDepth(3004));
-    anatomyArrows.lineStyle(3, 0xf0c95a, 0.9);
-    anatomyArrows.lineBetween(1160, 420, 1106, 452);
-    anatomyArrows.fillStyle(0xf0c95a, 0.95);
-    anatomyArrows.fillTriangle(1092, 461, 1108, 446, 1112, 458);
-    anatomyArrows.lineStyle(3, 0x8ce8df, 0.84);
-    anatomyArrows.lineBetween(935, 420, 986, 449);
-    anatomyArrows.fillStyle(0x8ce8df, 0.92);
-    anatomyArrows.fillTriangle(1001, 458, 982, 456, 990, 442);
-    add(
-      this.add
-        .text(1165, 396, i18n.t('report.doQuestionGills'), {
-          fontFamily: 'sans-serif',
-          fontSize: '20px',
-          color: '#f0c95a',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5)
-        .setDepth(3004),
-    );
-    add(
-      this.add
-        .text(925, 396, i18n.t('report.doQuestionSurface'), {
-          fontFamily: 'sans-serif',
-          fontSize: '20px',
-          color: '#8ce8df',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5)
-        .setDepth(3004),
-    );
-    const bubbleStarts = [520, 600, 680, 760] as const;
-    bubbleStarts.forEach((x, index) => {
-      const bubble = this.add
-        .circle(0, 0, 10 + index * 2, 0x9cf7ef, 0.2)
-        .setStrokeStyle(2, 0x9cf7ef, 0.9);
-      const label = this.add
-        .text(0, 0, 'O₂', {
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: '#d8fffb',
-            fontStyle: 'bold',
-          })
-        .setOrigin(0.5);
-      const bubbleRoot = add(
-        this.add
-          .container(x, 465 + (index % 2) * 34, [bubble, label])
-          .setDepth(3003),
+      fish.fillStyle(0x67d8d1, 1).fillEllipse(GAME_WIDTH / 2, 465, 210, 100);
+      fish.fillTriangle(
+        GAME_WIDTH / 2 - 100,
+        465,
+        GAME_WIDTH / 2 - 165,
+        420,
+        GAME_WIDTH / 2 - 165,
+        510,
       );
-      this.tweens.add({
-        targets: bubbleRoot,
-        x: 1080,
-        alpha: { from: 1, to: 0.2 },
-        duration: 1500 + index * 180,
-        repeat: -1,
-        delay: index * 220,
-      });
-    });
+    }
     const feedback = add(
       this.add
         .text(GAME_WIDTH / 2, 835, '', {
@@ -2289,24 +2462,30 @@ export class DiveScene extends Phaser.Scene {
     );
     add(
       this.add
-        .text(GAME_WIDTH / 2, 615, `${i18n.t('common.questionLabel')} ${i18n.t('report.doQuestionPrompt')}`, {
-          fontFamily: 'sans-serif',
-          fontSize: '24px',
-          color: '#e9fbff',
-          fontStyle: 'bold',
-          align: 'center',
-        })
+        .text(
+          GAME_WIDTH / 2,
+          615,
+          `${i18n.t('common.questionLabel')} ${i18n.t('report.doQuestionPrompt')}`,
+          {
+            fontFamily: 'sans-serif',
+            fontSize: '30px',
+            color: '#e9fbff',
+            fontStyle: 'bold',
+            align: 'center',
+          },
+        )
         .setOrigin(0.5)
         .setDepth(3004),
     );
     add(
       this.add
-        .text(490, 660, i18n.t('common.optionsLabel'), {
+        .text(490, 675, i18n.t('common.optionsLabel'), {
           fontFamily: 'sans-serif',
-          fontSize: '21px',
+          fontSize: '29px',
           color: '#f0c95a',
           fontStyle: 'bold',
         })
+        .setOrigin(0, 1)
         .setDepth(3004),
     );
     [
@@ -2316,21 +2495,18 @@ export class DiveScene extends Phaser.Scene {
       const button = new ResearchButton(
         this,
         700 + index * 520,
-        735,
-        430,
-        78,
+        742,
+        440,
+        94,
         `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
-        { tone: 'secondary', fontSize: 25, depth: 3004 },
+        { tone: 'secondary', fontSize: 28, lineSpacing: 6, depth: 3004 },
       );
       add(button.root);
       button.onPress(() => {
         button.setTone(choice.correct ? 'primary' : 'danger');
-        if (choice.correct) {
-          gill.setStrokeStyle(5, Palette.success, 1);
-        } else {
-          scaleMarker.setStrokeStyle(4, Palette.danger, 1);
-        }
-        feedback.setText(i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'));
+        feedback.setText(
+          i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
+        );
         if (choice.correct) this.time.delayedCall(620, () => this.showDoBridge());
       });
     });
@@ -2451,7 +2627,29 @@ export class DiveScene extends Phaser.Scene {
       i18n.t('report.startRecap'),
       { tone: 'primary', fontSize: 27, depth: 3002 },
     );
+    button.setEnabled(this.doBridgeNarrationCompleted);
+    if (!this.doBridgeNarrationCompleted) button.setText(i18n.t('report.doBridgeListenFirst'));
     button.onPress(() => this.showChapter1Recap());
+    const playRequiredNarration = (): void => {
+      button.setText(i18n.t('report.doBridgeListenFirst')).setEnabled(false);
+      const started = this.speakDoBridgeExplanation(
+        () => {
+          this.doBridgeNarrationCompleted = true;
+          button.setText(i18n.t('report.startRecap')).setEnabled(true);
+        },
+        () => button.setText(i18n.t('report.doBridgeVoiceRetry')).setEnabled(false),
+      );
+      // Avoid trapping a learner on devices with no speech-synthesis API.
+      if (!started) {
+        this.doBridgeNarrationCompleted = true;
+        button.setText(i18n.t('report.startRecap')).setEnabled(true);
+      }
+    };
+    dim.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (!this.doBridgeNarrationCompleted && this.activeDoBridgeUtterance === null) {
+        playRequiredNarration();
+      }
+    });
     const back = new ResearchButton(this, 470, 825, 260, 64, i18n.t('common.backStep'), {
       tone: 'secondary',
       fontSize: 22,
@@ -2469,48 +2667,74 @@ export class DiveScene extends Phaser.Scene {
       button.root,
       back.root,
     ];
+    if (!this.doBridgeNarrationPlayed) {
+      this.doBridgeNarrationPlayed = true;
+      playRequiredNarration();
+    }
     this.sharpenVisibleText();
+  }
+
+  private speakDoBridgeExplanation(onComplete?: () => void, onError?: () => void): boolean {
+    const scripts = {
+      can: {
+        lang: 'zh-HK',
+        text: 'DO 就係溶解氧，即係溶喺水入面、俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。',
+      },
+      pth: {
+        lang: 'zh-CN',
+        text: 'DO 就是溶解氧，也就是溶在水里、供鱼和其他水中生物呼吸的氧气。一次读数可能错过清晨低氧，所以要在不同位置、不同深度连续监测。',
+      },
+      eng: {
+        lang: 'en-US',
+        text: 'DO means dissolved oxygen: oxygen in water that fish and other aquatic life can breathe. One reading may miss low oxygen before dawn, so we monitor continuously at different locations and depths.',
+      },
+    } as const;
+    const script = scripts[experiencePreferences.getVoice()];
+    if (
+      typeof window === 'undefined' ||
+      window.speechSynthesis === undefined ||
+      typeof SpeechSynthesisUtterance === 'undefined'
+    ) {
+      return false;
+    }
+
+    const synthesizer = window.speechSynthesis;
+    this.activeDoBridgeUtterance = null;
+    synthesizer.cancel();
+    synthesizer.resume();
+    const utterance = new SpeechSynthesisUtterance(script.text);
+    this.activeDoBridgeUtterance = utterance;
+    utterance.lang = script.lang;
+    utterance.rate = 0.88;
+    utterance.pitch = 1;
+    const languageRoot = script.lang.toLowerCase().split('-')[0] ?? script.lang.toLowerCase();
+    const matchingVoice =
+      window.speechSynthesis
+        .getVoices()
+        .find((voice) => voice.lang.toLowerCase().startsWith(script.lang.toLowerCase())) ??
+      window.speechSynthesis
+        .getVoices()
+        .find((voice) => voice.lang.toLowerCase().startsWith(languageRoot));
+    if (matchingVoice !== undefined) utterance.voice = matchingVoice;
+    utterance.onend = () => {
+      if (this.activeDoBridgeUtterance !== utterance) return;
+      this.activeDoBridgeUtterance = null;
+      onComplete?.();
+    };
+    utterance.onerror = () => {
+      if (this.activeDoBridgeUtterance !== utterance) return;
+      this.activeDoBridgeUtterance = null;
+      onError?.();
+    };
+    // Keep the utterance strongly referenced until onend. Some WebKit builds
+    // otherwise stop longer Chinese speech partway through.
+    synthesizer.speak(utterance);
+    return true;
   }
 
   private enterChapter2(): void {
     gameState.selectedChapter = 2;
     this.scene.start(SceneKeys.Chapter2Lab);
-  }
-
-  private getFoodWebNodeState(
-    speciesIds: readonly string[],
-    isContextNode: boolean,
-  ): { label: string; color: string; fill: number; stroke: number } {
-    if (isContextNode) {
-      return {
-        label: i18n.t('report.foodWebContext'),
-        color: '#9cf7ef',
-        fill: 0x19536a,
-        stroke: 0x9cf7ef,
-      };
-    }
-    if (this.mapView?.hasPhotographedSpecies(speciesIds) === true) {
-      return {
-        label: i18n.t('report.foodWebPhotographed'),
-        color: '#91e6a7',
-        fill: 0x1c7a74,
-        stroke: 0x91e6a7,
-      };
-    }
-    if (speciesIds.some((speciesId) => this.observedSpecies.has(speciesId))) {
-      return {
-        label: i18n.t('report.foodWebDetected'),
-        color: '#f0c95a',
-        fill: 0x5b4b25,
-        stroke: 0xf0c95a,
-      };
-    }
-    return {
-      label: i18n.t('report.foodWebNotObserved'),
-      color: Palette.textMuted,
-      fill: 0x071923,
-      stroke: 0x3fd0c9,
-    };
   }
 
   private getSpeciesLabel(speciesId: string): string {
@@ -2520,15 +2744,10 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private getReportSpeciesTextureKey(speciesId: string): string | null {
+    const frameKeys = this.getCreatureDisplayFrameKeys(speciesId);
+    if (frameKeys.length > 0) return frameKeys[0] ?? null;
     const staticKey = `chapter1-subject-${speciesId}`;
-    if (this.textures.exists(staticKey)) return staticKey;
-    const frameKey = `chapter1-subject-${speciesId}-frame-00`;
-    const transparentFrameKey = `${frameKey}-transparent`;
-    if (speciesId === 'tube-sponge') {
-      return this.textures.exists(transparentFrameKey) ? transparentFrameKey : null;
-    }
-    if (this.textures.exists(transparentFrameKey)) return transparentFrameKey;
-    return this.textures.exists(frameKey) ? frameKey : null;
+    return this.textures.exists(staticKey) ? staticKey : null;
   }
 
   private openTutorial(isFirstTime: boolean): void {
@@ -2945,16 +3164,28 @@ export class DiveScene extends Phaser.Scene {
 
   private openViewfinder(): void {
     if (this.mapView === null) return;
+    const task = getDiveFieldTask(this.fieldTaskIndex);
+    if (task?.kind !== 'station') {
+      this.showStatus(i18n.t('dive.guidanceFollowCurrentTask'));
+      return;
+    }
     const position = this.diver.getPosition();
-    const target = this.mapView.getNearestPhotographableStation(position.x, position.y);
+    const target = this.mapView.getNearestPhotographableStation(
+      position.x,
+      position.y,
+      task.stationId,
+    );
     if (target === null) {
       this.showStatus(i18n.t('dive.viewfinderNoTarget'));
       return;
     }
 
     this.viewfinderOpen = true;
-    this.viewfinderTarget = target;
-    this.actionWasDown = false;
+    this.viewfinderTarget = { kind: 'station', ...target };
+    // SPACE opens the camera and is also the shutter. Mark this press as
+    // consumed so holding the key cannot take an accidental photo one frame
+    // after the viewfinder appears.
+    this.actionWasDown = true;
 
     const cx = GAME_WIDTH / 2;
     const cy = GAME_HEIGHT / 2;
@@ -3000,7 +3231,7 @@ export class DiveScene extends Phaser.Scene {
     const title = this.add
       .text(cx, top + 43, `${i18n.t('dive.viewfinderTitle')} · ${target.displayName}`, {
         fontFamily: 'sans-serif',
-        fontSize: '26px',
+        fontSize: '31px',
         color: Palette.textLight,
         fontStyle: 'bold',
       })
@@ -3024,24 +3255,56 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setDepth(2804);
+    const targetSpeciesId = this.getViewfinderTargetSpeciesId(target.id);
+    const targetSpeciesLabel = this.getSpeciesLabel(targetSpeciesId);
+    const targetSpeciesTextureKey = this.getReportSpeciesTextureKey(targetSpeciesId);
     const referenceX = left + 176;
     const referenceCard = this.add
-      .rectangle(referenceX, top + 202, 270, 270, 0x123c50, 0.98)
+      .rectangle(referenceX, top + 350, 270, 510, 0x123c50, 0.98)
       .setStrokeStyle(2, 0x3fd0c9, 0.7)
       .setDepth(2802);
+    const currentTargetTitle = this.add
+      .text(referenceX, top + 110, i18n.t('dive.viewfinderCurrentTarget'), {
+        fontFamily: 'sans-serif',
+        fontSize: '19px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+    const currentTargetImage =
+      targetSpeciesTextureKey === null
+        ? null
+        : this.addHistoricalPhoto(targetSpeciesTextureKey, referenceX, top + 187, 200, 108, 2804);
+    const currentTargetName = this.add
+      .text(referenceX, top + 253, targetSpeciesLabel, {
+        fontFamily: 'sans-serif',
+        fontSize: '21px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 230, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+    const referenceDivider = this.add.graphics().setDepth(2803);
+    referenceDivider.lineStyle(2, 0x3fd0c9, 0.32);
+    referenceDivider.lineBetween(referenceX - 108, top + 286, referenceX + 108, top + 286);
     const referenceBadge = this.add
-      .text(left + 42, top + 107, 'ARCHIVE / 01', {
+      .text(referenceX, top + 318, i18n.t('dive.viewfinderHistoricalImage'), {
         fontFamily: 'monospace',
-        fontSize: '14px',
-        color: '#f0c95a',
+        fontSize: '19px',
+        color: Palette.accentText,
         fontStyle: 'bold',
       })
+      .setOrigin(0.5)
       .setDepth(2804);
     const referenceTitle = this.add
-      .text(referenceX, top + 84, i18n.t('dive.viewfinderReference'), {
+      .text(referenceX, top + 352, i18n.t('dive.viewfinderReference'), {
         fontFamily: 'sans-serif',
-        fontSize: '17px',
-        color: Palette.accentText,
+        fontSize: '18px',
+        color: Palette.textLight,
         align: 'center',
         wordWrap: { width: 230, useAdvancedWrap: true },
       })
@@ -3051,7 +3314,7 @@ export class DiveScene extends Phaser.Scene {
     const referenceImage =
       photo === null
         ? null
-        : this.addHistoricalPhoto(photo.key, referenceX, top + 202, 225, 146, 2803);
+        : this.addHistoricalPhoto(photo.key, referenceX, top + 446, 225, 146, 2803);
 
     // The previous viewfinder only dimmed the map. Build a dedicated preview
     // so the player can immediately see the scene being compared.
@@ -3076,19 +3339,32 @@ export class DiveScene extends Phaser.Scene {
     const liveBadge = this.add
       .text(previewLeft + 24, previewTop + 20, i18n.t('dive.viewfinderLive'), {
         fontFamily: 'sans-serif',
-        fontSize: '16px',
+        fontSize: '23px',
         color: '#d8fffb',
         backgroundColor: '#0b6c68dd',
         padding: { x: 10, y: 6 },
         fontStyle: 'bold',
       })
       .setDepth(2806);
-    const liveHint = this.add
-      .text(previewLeft + 24, previewTop + 68, i18n.t('dive.viewfinderCompareHint'), {
+    const locationBadge = this.add
+      .text(previewLeft + previewWidth - 24, previewTop + 20, target.displayName, {
         fontFamily: 'sans-serif',
-        fontSize: '16px',
+        fontSize: '22px',
+        color: '#d8fffb',
+        backgroundColor: '#0b3441dd',
+        padding: { x: 10, y: 6 },
+        fontStyle: 'bold',
+        align: 'right',
+      })
+      .setOrigin(1, 0)
+      .setDepth(2806);
+    const liveHint = this.add
+      .text(previewLeft + 24, previewTop + 70, i18n.t('dive.viewfinderCompareHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
         color: '#e6f7ffdd',
-        wordWrap: { width: 360, useAdvancedWrap: true },
+        fontStyle: 'bold',
+        wordWrap: { width: previewWidth - 48, useAdvancedWrap: false },
       })
       .setDepth(2806);
     const targetX = previewX + 58;
@@ -3114,13 +3390,16 @@ export class DiveScene extends Phaser.Scene {
       const imageBaseX = image.x;
       const imageBaseY = image.y;
       const grounded = spec.grounded === true;
-      // Use one clean, fixed frame per species. Keep each supplied frame in
-      // its correct fixed orientation and animate only a gentle drift, so
-      // there is no sprite swapping or turn-around flicker.
-      image.setFlipX(this.shouldFlipViewfinderPhoto(spec.key));
+      const frameKeys = this.getCreatureDisplayFrameKeys(spec.speciesId);
+      const framePlan = getCreatureFramePlan(spec.speciesId);
+      // Every fish keeps one stable facing direction while its supplied body-
+      // motion frames play. Positional drift is deliberately secondary, so
+      // the animal no longer looks like a rigid cutout sliding sideways.
+      image.setFlipX(this.shouldFlipViewfinderSpecies(spec.speciesId));
       return [
         {
           image,
+          speciesId: spec.speciesId,
           x: initialX,
           y: initialY,
           originX: initialX,
@@ -3143,6 +3422,10 @@ export class DiveScene extends Phaser.Scene {
           swayAngle: grounded ? 0 : Phaser.Math.FloatBetween(1.5, 3.5),
           grounded,
           isTarget: spec.target === true,
+          frameKeys,
+          frameDurationMs: framePlan?.frameDurationMs ?? 0,
+          frameElapsedMs: Phaser.Math.Between(0, Math.max(1, framePlan?.frameDurationMs ?? 1)),
+          frameIndex: 0,
         },
       ];
     });
@@ -3156,33 +3439,25 @@ export class DiveScene extends Phaser.Scene {
     crosshairLines.lineBetween(targetX + 40, targetY, targetX + 112, targetY);
     crosshairLines.lineBetween(targetX, targetY - 112, targetX, targetY - 40);
     crosshairLines.lineBetween(targetX, targetY + 40, targetX, targetY + 112);
-    const targetSpeciesId = this.getViewfinderTargetSpeciesId(target.id);
     const missionBanner = this.add
-      .text(
-        previewX,
-        previewTop + 22,
-        i18n
-          .t('dive.viewfinderMission')
-          .replace('{species}', this.getSpeciesLabel(targetSpeciesId)),
-        {
-          fontFamily: 'sans-serif',
-          fontSize: '18px',
-          color: '#fff3b0',
-          backgroundColor: '#4a391bdd',
-          padding: { x: 14, y: 7 },
-          fontStyle: 'bold',
-        },
-      )
+      .text(previewX, previewTop + 22, i18n.t('dive.viewfinderMissionStation'), {
+        fontFamily: 'sans-serif',
+        fontSize: '23px',
+        color: '#fff3b0',
+        backgroundColor: '#4a391bdd',
+        padding: { x: 14, y: 7 },
+        fontStyle: 'bold',
+      })
       .setOrigin(0.5, 0)
       .setDepth(2808);
     const targetLabel = this.add
       .text(
         targetX,
         targetY + this.viewfinderTargetLabelOffsetY,
-        `${i18n.t('dive.viewfinderTarget')}\n${this.getSpeciesLabel(targetSpeciesId)}`,
+        i18n.t('dive.viewfinderReferenceSubject').replace('{species}', targetSpeciesLabel),
         {
           fontFamily: 'sans-serif',
-          fontSize: '17px',
+          fontSize: '22px',
           color: '#d8fffb',
           backgroundColor: '#062432cc',
           padding: { x: 10, y: 6 },
@@ -3194,7 +3469,7 @@ export class DiveScene extends Phaser.Scene {
 
     const quality = this.getViewfinderQuality(target.distance);
     const qualityText = this.add
-      .text(cx, bottom - 96, i18n.t(quality.qualityKey), {
+      .text(cx, bottom - 48, i18n.t(quality.qualityKey), {
         fontFamily: 'sans-serif',
         fontSize: '24px',
         color: quality.color,
@@ -3203,20 +3478,68 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(2804);
-    const controls = this.add
-      .text(cx, bottom + 34, i18n.t('dive.viewfinderControls'), {
+    const controlY = bottom + 34;
+    const aimPrefix = this.add
+      .text(cx - 700, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
         fontFamily: 'sans-serif',
-        fontSize: '19px',
-        color: Palette.textMuted,
-        align: 'center',
-        wordWrap: { width: 900, useAdvancedWrap: true },
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
       })
-      .setOrigin(0.5)
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const aimKeycaps = this.createViewfinderMovementKeycaps(cx - 625, controlY);
+    const aimControl = this.add
+      .text(cx - 375, controlY, i18n.t('dive.viewfinderAimControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const shutterPrefix = this.add
+      .text(cx - 85, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const shutterKeycap = this.createViewfinderKeycap(cx + 5, controlY, 'SPACE');
+    const shutterControl = this.add
+      .text(cx + 76, controlY, i18n.t('dive.viewfinderShutterControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const exitPrefix = this.add
+      .text(cx + 330, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const exitKeycap = this.createViewfinderKeycap(cx + 415, controlY, 'ESC');
+    const exitControl = this.add
+      .text(cx + 482, controlY, i18n.t('dive.viewfinderExitControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
       .setDepth(2804);
     const status = this.add
-      .text(right - 32, top + 32, `${Math.round(target.distance)} px`, {
+      .text(right - 32, top + 61, `${Math.round(target.distance)} px`, {
         fontFamily: 'sans-serif',
-        fontSize: '18px',
+        fontSize: '14px',
         color: Palette.textMuted,
         align: 'right',
       })
@@ -3250,31 +3573,455 @@ export class DiveScene extends Phaser.Scene {
       captureTag,
       liveTag,
       referenceCard,
+      currentTargetTitle,
+      currentTargetName,
+      referenceDivider,
       referenceBadge,
       referenceTitle,
       previewFrame,
       ...previewEnvironment,
       liveBadge,
+      locationBadge,
       liveHint,
       missionBanner,
       crosshair,
       crosshairLines,
       targetLabel,
       qualityText,
-      controls,
+      aimPrefix,
+      ...aimKeycaps,
+      aimControl,
+      shutterPrefix,
+      shutterKeycap,
+      shutterControl,
+      exitPrefix,
+      exitKeycap,
+      exitControl,
       status,
     ];
+    if (currentTargetImage !== null) this.viewfinderObjects.push(currentTargetImage);
     if (referenceImage !== null) this.viewfinderObjects.push(referenceImage);
     for (const previewPhoto of previewPhotos) this.viewfinderObjects.push(previewPhoto.image);
     this.sharpenVisibleText();
   }
 
+  /** Camera mode for the organism step, with the requested animal kept visible. */
+  public openSubjectViewfinder(stationId: string, speciesId: string): void {
+    if (this.mapView === null) return;
+    const position = this.diver.getPosition();
+    const target = this.mapView.getNearestPhotographableSubject(position.x, position.y, speciesId);
+    const textureKey = this.getReportSpeciesTextureKey(speciesId);
+    if (target === null || textureKey === null) {
+      this.showStatus(i18n.t('dive.subjectViewfinderNoTarget'));
+      return;
+    }
+
+    this.viewfinderOpen = true;
+    this.viewfinderTarget = {
+      kind: 'subject',
+      id: speciesId,
+      stationId,
+      speciesId,
+      displayName: target.label,
+      distance: target.distance,
+    };
+    this.actionWasDown = true;
+
+    const cx = GAME_WIDTH / 2;
+    const cy = GAME_HEIGHT / 2;
+    const frameWidth = 1420;
+    const frameHeight = 740;
+    const left = cx - frameWidth / 2;
+    const right = cx + frameWidth / 2;
+    const top = cy - frameHeight / 2;
+    const bottom = cy + frameHeight / 2;
+    const dim = this.add
+      .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02060c, 0.9)
+      .setOrigin(0)
+      .setDepth(2800);
+    const frame = this.add
+      .rectangle(cx, cy, frameWidth, frameHeight, 0x061923, 0.99)
+      .setStrokeStyle(3, Palette.accent, 0.9)
+      .setDepth(2801);
+    const headerBar = this.add
+      .rectangle(cx, top + 45, frameWidth - 14, 70, 0x0b2b3b, 0.98)
+      .setStrokeStyle(1, 0x3fd0c9, 0.42)
+      .setDepth(2802);
+    const captureTag = this.add
+      .text(left + 34, top + 34, 'CAPTURE / ORGANISM', {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: Palette.accentText,
+        fontStyle: 'bold',
+      })
+      .setDepth(2804);
+    const title = this.add
+      .text(cx, top + 43, i18n.t('dive.organismViewfinderTitle'), {
+        fontFamily: 'sans-serif',
+        fontSize: '31px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+    const liveTag = this.add
+      .text(right - 34, top + 34, '● LIVE', {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#91e6a7',
+        fontStyle: 'bold',
+      })
+      .setOrigin(1, 0)
+      .setDepth(2804);
+
+    const targetCardX = left + 170;
+    const targetCard = this.add
+      .rectangle(targetCardX, top + 354, 282, 500, 0x123c50, 0.98)
+      .setStrokeStyle(2, 0xf0c95a, 0.74)
+      .setDepth(2802);
+    const targetCardEyebrow = this.add
+      .text(targetCardX, top + 126, i18n.t('dive.guidanceTarget'), {
+        fontFamily: 'monospace',
+        fontSize: '22px',
+        color: '#f0c95a',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+    const targetCardImage = this.addHistoricalPhoto(
+      textureKey,
+      targetCardX,
+      top + 250,
+      220,
+      150,
+      2804,
+    );
+    const targetCardName = this.add
+      .text(targetCardX, top + 356, target.label, {
+        fontFamily: 'sans-serif',
+        fontSize: '27px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+        align: 'center',
+        wordWrap: { width: 230, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+    const targetCardHint = this.add
+      .text(targetCardX, top + 452, i18n.t('dive.organismViewfinderTargetHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '18px',
+        color: '#d8fffb',
+        align: 'center',
+        lineSpacing: 5,
+        wordWrap: { width: 230, useAdvancedWrap: true },
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+
+    const previewLeft = left + 330;
+    const previewTop = top + 82;
+    const previewWidth = 1015;
+    const previewHeight = 555;
+    const previewX = previewLeft + previewWidth / 2;
+    const previewY = previewTop + previewHeight / 2;
+    const previewFrame = this.add
+      .rectangle(previewX, previewY, previewWidth, previewHeight, 0x0c3a4c, 0.98)
+      .setStrokeStyle(2, 0x3fd0c9, 0.82)
+      .setDepth(2802);
+    const previewEnvironment = this.createViewfinderEnvironment(
+      stationId,
+      previewLeft + 4,
+      previewTop + 4,
+      previewWidth - 8,
+      previewHeight - 8,
+      2803,
+    );
+    const missionBanner = this.add
+      .text(previewX, previewTop + 22, i18n.t('dive.organismViewfinderMission'), {
+        fontFamily: 'sans-serif',
+        fontSize: '18px',
+        color: '#fff3b0',
+        backgroundColor: '#4a391bdd',
+        padding: { x: 14, y: 7 },
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(2808);
+
+    const grounded = speciesId === 'sea-cucumber' || speciesId === 'tube-sponge';
+    const targetX = previewX;
+    const targetY = grounded ? previewTop + previewHeight - 116 : previewY + 8;
+    const previewTarget = this.addHistoricalPhoto(
+      textureKey,
+      targetX,
+      targetY,
+      grounded ? 330 : 360,
+      grounded ? 184 : 225,
+      2806,
+    );
+    if (previewTarget === null) {
+      this.closeViewfinder();
+      this.showStatus(i18n.t('dive.subjectViewfinderNoTarget'));
+      return;
+    }
+    const targetFrameKeys = this.getCreatureDisplayFrameKeys(speciesId);
+    const targetFramePlan = getCreatureFramePlan(speciesId);
+    previewTarget.setFlipX(this.shouldFlipViewfinderSpecies(speciesId));
+
+    // Keep the rest of the station alive in the organism close-up as well.
+    // Background fish use their own frame sequences instead of becoming
+    // static scenery while the target alone moves.
+    const ambientPreviewPhotos = this.getViewfinderPhotos(stationId).flatMap((spec) => {
+      if (spec.speciesId === speciesId || spec.grounded === true) return [];
+      const imageX = previewX + spec.offsetX * 0.9;
+      const imageY = previewY + spec.offsetY * 0.9;
+      const image = this.addHistoricalPhoto(
+        spec.key,
+        imageX,
+        imageY,
+        spec.width,
+        spec.height,
+        2805,
+      );
+      if (image === null) return [];
+      const frameKeys = this.getCreatureDisplayFrameKeys(spec.speciesId);
+      const framePlan = getCreatureFramePlan(spec.speciesId);
+      image.setFlipX(this.shouldFlipViewfinderSpecies(spec.speciesId)).setAlpha(0.9);
+      return [
+        {
+          image,
+          speciesId: spec.speciesId,
+          x: imageX,
+          y: imageY,
+          originX: imageX,
+          originY: imageY,
+          imageBaseX: image.x,
+          imageBaseY: image.y,
+          floatTime: Phaser.Math.FloatBetween(0, Math.PI * 2),
+          floatPhase: Phaser.Math.FloatBetween(0, Math.PI * 2),
+          floatSpeed: Phaser.Math.FloatBetween(0.68, 0.92),
+          floatWidth: Phaser.Math.FloatBetween(10, 22),
+          floatHeight: Phaser.Math.FloatBetween(4, 10),
+          swayAngle: Phaser.Math.FloatBetween(1.2, 2.6),
+          grounded: false,
+          isTarget: false,
+          frameKeys,
+          frameDurationMs: framePlan?.frameDurationMs ?? 0,
+          frameElapsedMs: Phaser.Math.Between(0, Math.max(1, framePlan?.frameDurationMs ?? 1)),
+          frameIndex: 0,
+        },
+      ];
+    });
+    const crosshair = this.add
+      .circle(targetX, targetY, 82, 0x3fd0c9, 0.03)
+      .setStrokeStyle(3, 0x9cf7ef, 0.9)
+      .setDepth(2807);
+    const crosshairLines = this.add.graphics().setDepth(2807);
+    crosshairLines.lineStyle(2, 0x9cf7ef, 0.75);
+    crosshairLines.lineBetween(targetX - 126, targetY, targetX - 48, targetY);
+    crosshairLines.lineBetween(targetX + 48, targetY, targetX + 126, targetY);
+    crosshairLines.lineBetween(targetX, targetY - 126, targetX, targetY - 48);
+    crosshairLines.lineBetween(targetX, targetY + 48, targetX, targetY + 126);
+    this.viewfinderTargetLabelOffsetY = grounded ? -108 : 118;
+    const targetLabel = this.add
+      .text(
+        targetX,
+        targetY + this.viewfinderTargetLabelOffsetY,
+        `${i18n.t('dive.guidanceTarget')}\n${target.label}`,
+        {
+          fontFamily: 'sans-serif',
+          fontSize: '22px',
+          color: '#fff3b0',
+          backgroundColor: '#4a391bdd',
+          padding: { x: 12, y: 7 },
+          align: 'center',
+          fontStyle: 'bold',
+        },
+      )
+      .setOrigin(0.5)
+      .setDepth(2808);
+    const qualityText = this.add
+      .text(cx, bottom - 48, i18n.t('dive.organismViewfinderReady'), {
+        fontFamily: 'sans-serif',
+        fontSize: '24px',
+        color: '#91e6a7',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+
+    const controlY = bottom + 34;
+    const aimKeycaps = this.createViewfinderMovementKeycaps(cx - 570, controlY);
+    const aimControl = this.add
+      .text(cx - 310, controlY, i18n.t('dive.viewfinderAimControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const shutterKeycap = this.createViewfinderKeycap(cx + 5, controlY, 'SPACE');
+    const shutterControl = this.add
+      .text(cx + 76, controlY, i18n.t('dive.viewfinderShutterControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const exitKeycap = this.createViewfinderKeycap(cx + 390, controlY, 'ESC');
+    const exitControl = this.add
+      .text(cx + 468, controlY, i18n.t('dive.viewfinderExitControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+
+    this.viewfinderAimX = 0;
+    this.viewfinderAimY = 0;
+    this.viewfinderAimOrigin = { x: targetX, y: targetY };
+    this.viewfinderAimBounds = {
+      left: previewLeft + 92,
+      right: previewLeft + previewWidth - 92,
+      top: previewTop + 92,
+      bottom: previewTop + previewHeight - 92,
+    };
+    this.viewfinderFocusPhotos = [
+      {
+        image: previewTarget,
+        speciesId,
+        x: targetX,
+        y: targetY,
+        originX: targetX,
+        originY: targetY,
+        imageBaseX: previewTarget.x,
+        imageBaseY: previewTarget.y,
+        floatTime: Phaser.Math.FloatBetween(0, Math.PI * 2),
+        floatPhase: Phaser.Math.FloatBetween(0, Math.PI * 2),
+        floatSpeed: 0.72,
+        floatWidth: grounded ? 0 : 18,
+        floatHeight: grounded ? 0 : 7,
+        swayAngle: grounded ? 0 : 2,
+        grounded,
+        isTarget: true,
+        frameKeys: targetFrameKeys,
+        frameDurationMs: targetFramePlan?.frameDurationMs ?? 0,
+        frameElapsedMs: Phaser.Math.Between(0, Math.max(1, targetFramePlan?.frameDurationMs ?? 1)),
+        frameIndex: 0,
+      },
+      ...ambientPreviewPhotos,
+    ];
+    this.viewfinderCrosshair = crosshair;
+    this.viewfinderCrosshairLines = crosshairLines;
+    this.viewfinderTargetLabel = targetLabel;
+    this.viewfinderQualityText = qualityText;
+    this.viewfinderObjects = [
+      dim,
+      frame,
+      headerBar,
+      captureTag,
+      title,
+      liveTag,
+      targetCard,
+      targetCardEyebrow,
+      targetCardName,
+      targetCardHint,
+      previewFrame,
+      ...previewEnvironment,
+      missionBanner,
+      ...ambientPreviewPhotos.map((photo) => photo.image),
+      previewTarget,
+      crosshair,
+      crosshairLines,
+      targetLabel,
+      qualityText,
+      ...aimKeycaps,
+      aimControl,
+      shutterKeycap,
+      shutterControl,
+      exitKeycap,
+      exitControl,
+    ];
+    if (targetCardImage !== null) this.viewfinderObjects.push(targetCardImage);
+    this.sharpenVisibleText();
+  }
+
+  private createViewfinderKeycap(x: number, y: number, label: string): Phaser.GameObjects.Text {
+    return this.add
+      .text(x, y, label, {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: '#17313b',
+        backgroundColor: '#f0c95a',
+        padding: { x: 13, y: 10 },
+        fontStyle: 'bold',
+      })
+      .setOrigin(0.5)
+      .setDepth(2804);
+  }
+
+  private createViewfinderMovementKeycaps(left: number, y: number): Phaser.GameObjects.Text[] {
+    return ['W ↑', 'A ←', 'S ↓', 'D →'].map((label, index) =>
+      this.createViewfinderKeycap(left + index * 64, y, label),
+    );
+  }
+
   private captureViewfinder(): void {
     if (this.mapView === null || this.viewfinderTarget === null) return;
+    if (!this.isViewfinderTargetAligned()) {
+      this.viewfinderQualityText?.setText(i18n.t('dive.viewfinderAimRequired')).setColor('#ffb09d');
+      if (this.viewfinderCrosshair !== null) {
+        this.tweens.add({
+          targets: this.viewfinderCrosshair,
+          scale: 1.14,
+          duration: 120,
+          yoyo: true,
+          repeat: 1,
+        });
+      }
+      return;
+    }
+    const task = getDiveFieldTask(this.fieldTaskIndex);
+    if (this.viewfinderTarget.kind === 'subject') {
+      if (task?.kind !== 'subject' || task.speciesId !== this.viewfinderTarget.speciesId) {
+        this.closeViewfinder();
+        this.showStatus(i18n.t('dive.guidanceFollowCurrentTask'));
+        return;
+      }
+      const interaction = this.mapView.tryPhotographSubject(
+        this.diver.getPosition().x,
+        this.diver.getPosition().y,
+        task.speciesId,
+      );
+      if (interaction === null) {
+        this.closeViewfinder();
+        this.showStatus(i18n.t('dive.subjectViewfinderNoTarget'));
+        return;
+      }
+      const species = this.getSpeciesLabel(task.speciesId);
+      this.closeViewfinder();
+      this.cameras.main.flash(140, 255, 255, 255);
+      this.playShutterSound();
+      this.advanceFieldTask();
+      this.showStatus(i18n.t('dive.guidanceSubjectComplete').replace('{species}', species));
+      return;
+    }
+    if (task?.kind !== 'station' || task.stationId !== this.viewfinderTarget.id) {
+      this.closeViewfinder();
+      this.showStatus(i18n.t('dive.guidanceFollowCurrentTask'));
+      return;
+    }
     const quality = this.getViewfinderQuality(this.getCurrentViewfinderDistance());
     const stationId = this.mapView.tryPhotographStation(
       this.diver.getPosition().x,
       this.diver.getPosition().y,
+      task.stationId,
     );
     if (stationId === null) {
       this.closeViewfinder();
@@ -3285,8 +4032,22 @@ export class DiveScene extends Phaser.Scene {
     this.closeViewfinder();
     this.cameras.main.flash(140, 255, 255, 255);
     this.playShutterSound();
+    const location = i18n.t(`dive.station${task.stationNumber}`);
+    this.advanceFieldTask();
+    const nextTask = getDiveFieldTask(this.fieldTaskIndex);
+    const nextInstruction =
+      nextTask?.kind === 'subject'
+        ? i18n
+            .t('dive.viewfinderStationSavedNextSubject')
+            .replace('{species}', this.getSpeciesLabel(nextTask.speciesId))
+        : '';
     this.showStatus(
-      `${i18n.t(quality.captureKey)} ${this.mapView.stationPhotoCount}/${REQUIRED_STATION_PHOTOS}`,
+      `${i18n.t(quality.captureKey)} ${i18n
+        .t('dive.guidanceStationComplete')
+        .replace(
+          '{location}',
+          location,
+        )}${nextInstruction.length > 0 ? `\n${nextInstruction}` : ''}`,
     );
   }
 
@@ -3341,18 +4102,51 @@ export class DiveScene extends Phaser.Scene {
     if (this.viewfinderTarget === null) return 999;
     const focusX = this.viewfinderAimOrigin.x + this.viewfinderAimX;
     const focusY = this.viewfinderAimOrigin.y + this.viewfinderAimY;
-    const targetFish = this.viewfinderFocusPhotos.find((fish) => fish.isTarget);
-    if (targetFish === undefined) return this.viewfinderTarget.distance + 240;
-    const centerDistance = Phaser.Math.Distance.Between(focusX, focusY, targetFish.x, targetFish.y);
-    const fishRadius = Math.max(targetFish.image.displayWidth, targetFish.image.displayHeight) / 2;
-    // A target is only well framed when the crosshair is actually centered
-    // on it; touching the edge of the reticle is no longer enough.
-    const subjectError = Math.max(0, centerDistance - fishRadius * 0.35);
+    const referenceSubject = this.viewfinderFocusPhotos.find((photo) => photo.isTarget);
+    if (referenceSubject === undefined) return this.viewfinderTarget.distance + 240;
+    const centerDistance = Phaser.Math.Distance.Between(
+      focusX,
+      focusY,
+      referenceSubject.x,
+      referenceSubject.y,
+    );
+    const referenceRadius =
+      Math.max(referenceSubject.image.displayWidth, referenceSubject.image.displayHeight) / 2;
+    // This subject is a framing reference within the fixed-station comparison
+    // photo. Recording the organism remains a separate action outside the
+    // viewfinder.
+    const subjectError = Math.max(0, centerDistance - referenceRadius * 0.35);
     return this.viewfinderTarget.distance + subjectError * 1.8;
+  }
+
+  private isViewfinderTargetAligned(): boolean {
+    const referenceSubject = this.viewfinderFocusPhotos.find((photo) => photo.isTarget);
+    if (referenceSubject === undefined) return false;
+    const focusX = this.viewfinderAimOrigin.x + this.viewfinderAimX;
+    const focusY = this.viewfinderAimOrigin.y + this.viewfinderAimY;
+    const referenceRadius =
+      Math.max(referenceSubject.image.displayWidth, referenceSubject.image.displayHeight) / 2;
+    // The reticle must visibly overlap the subject, not merely be somewhere
+    // near a large sprite's bounding box.
+    const allowedOffset = Math.max(34, Math.min(46, referenceRadius * 0.32));
+    return (
+      Phaser.Math.Distance.Between(focusX, focusY, referenceSubject.x, referenceSubject.y) <=
+      allowedOffset
+    );
   }
 
   private updateViewfinderFish(delta: number): void {
     for (const fish of this.viewfinderFocusPhotos) {
+      if (fish.frameKeys.length > 1 && fish.frameDurationMs > 0) {
+        fish.frameElapsedMs += delta;
+        const nextFrame =
+          Math.floor(fish.frameElapsedMs / fish.frameDurationMs) % fish.frameKeys.length;
+        if (nextFrame !== fish.frameIndex) {
+          fish.frameIndex = nextFrame;
+          const nextTextureKey = fish.frameKeys[nextFrame];
+          if (nextTextureKey !== undefined) fish.image.setTexture(nextTextureKey);
+        }
+      }
       fish.floatTime += (delta / 1000) * fish.floatSpeed;
       fish.x = fish.originX + Math.sin(fish.floatTime + fish.floatPhase) * fish.floatWidth;
       fish.y = fish.grounded
@@ -3377,6 +4171,7 @@ export class DiveScene extends Phaser.Scene {
     width: number,
     height: number,
     depth: number,
+    showContextLabel = true,
   ): Phaser.GameObjects.GameObject[] {
     const objects: Phaser.GameObjects.GameObject[] = [];
     const right = left + width;
@@ -3509,60 +4304,79 @@ export class DiveScene extends Phaser.Scene {
         : i18n.getLocale() === 'en'
           ? 'INNER BAY · SHALLOW SEABED'
           : '內灣 · 淺海床';
-    objects.push(
-      this.add
-        .text(right - 20, top + 18, contextLabel, {
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          color: '#d8fffb',
-          backgroundColor: '#062432b8',
-          padding: { x: 9, y: 5 },
-        })
-        .setOrigin(1, 0)
-        .setDepth(depth + 3),
-    );
+    if (showContextLabel) {
+      objects.push(
+        this.add
+          .text(right - 20, top + 18, contextLabel, {
+            fontFamily: 'monospace',
+            fontSize: '13px',
+            color: '#d8fffb',
+            backgroundColor: '#062432b8',
+            padding: { x: 9, y: 5 },
+          })
+          .setOrigin(1, 0)
+          .setDepth(depth + 3),
+      );
+    }
     return objects;
   }
 
   private getViewfinderTargetSpeciesId(stationId: string): string {
-    if (stationId.endsWith('1')) return 'blue-damselfish';
-    if (stationId.endsWith('2')) return 'reef-grouper';
-    return 'sea-cucumber';
+    return getRequiredSpeciesForStation(stationId) ?? 'sea-cucumber';
   }
 
-  private shouldFlipViewfinderPhoto(key: string): boolean {
-    // Blue damselfish already faces right in the supplied sheet. The other
-    // selected frames face left, so mirror those once and never during play.
-    return key !== 'chapter1-subject-blue-damselfish';
+  private getCreatureDisplayFrameKeys(speciesId: string): readonly string[] {
+    const framePlan = getCreatureFramePlan(speciesId);
+    if (framePlan === null) return [];
+    const needsEdgeCleanup =
+      speciesId === 'blue-damselfish' ||
+      speciesId === 'silver-reef-fish' ||
+      speciesId === 'tube-sponge';
+    const preparedFrameKeys = framePlan.indices.flatMap((index) => {
+      const sourceKey = `chapter1-subject-${speciesId}-frame-${String(index).padStart(2, '0')}`;
+      if (!this.textures.exists(sourceKey)) return [];
+      if (!needsEdgeCleanup) return [sourceKey];
+      const outputKey = `${sourceKey}-edge-transparent`;
+      return ensureEdgeTransparentTexture(this, sourceKey, outputKey) &&
+        this.textures.exists(outputKey)
+        ? [outputKey]
+        : [];
+    });
+    return ensureNormalizedTextureSequence(this, preparedFrameKeys, `${speciesId}-stable-body`);
   }
 
-  private getViewfinderPhotos(stationId: string): Array<{
-    key: string;
-    offsetX: number;
-    offsetY: number;
-    width: number;
-    height: number;
-    target?: boolean;
-    grounded?: boolean;
-  }> {
-    const blue = { key: 'chapter1-subject-blue-damselfish' };
-    const grouper = { key: 'chapter1-subject-reef-grouper' };
-    const goby = { key: 'chapter1-subject-hardy-goby' };
-    const silver = { key: 'chapter1-subject-silver-reef-fish' };
-    const cucumber = { key: 'chapter1-subject-sea-cucumber-frame-00' };
+  private shouldFlipViewfinderSpecies(speciesId: string): boolean {
+    // The replacement blue fish, grouper and goby frames face left. Mirror
+    // those once so every live-preview fish swims toward the right. The new
+    // silver frames already face right.
+    return (
+      speciesId === 'blue-damselfish' || speciesId === 'reef-grouper' || speciesId === 'hardy-goby'
+    );
+  }
+
+  private getViewfinderPhotos(stationId: string): ViewfinderPhotoSpec[] {
+    const textureFor = (speciesId: string): { speciesId: string; key: string } => ({
+      speciesId,
+      key: this.getReportSpeciesTextureKey(speciesId) ?? `chapter1-subject-${speciesId}`,
+    });
+    const blue = textureFor('blue-damselfish');
+    const grouper = textureFor('reef-grouper');
+    const goby = textureFor('hardy-goby');
+    const silver = textureFor('silver-reef-fish');
+    const cucumber = textureFor('sea-cucumber');
 
     if (stationId.endsWith('1')) {
       return [
-        { ...blue, offsetX: 0, offsetY: 0, width: 205, height: 112, target: true },
-        { ...silver, offsetX: -250, offsetY: 68, width: 142, height: 76 },
-        { ...goby, offsetX: 312, offsetY: 90, width: 116, height: 58 },
+        { ...blue, offsetX: 0, offsetY: 0, width: 278, height: 154, target: true },
+        { ...silver, offsetX: -250, offsetY: 68, width: 182, height: 98 },
+        { ...goby, offsetX: 312, offsetY: 90, width: 150, height: 76 },
       ];
     }
     if (stationId.endsWith('2')) {
       return [
-        { ...grouper, offsetX: 0, offsetY: 0, width: 216, height: 118, target: true },
-        { ...goby, offsetX: -250, offsetY: -82, width: 132, height: 66 },
-        { ...silver, offsetX: 232, offsetY: -116, width: 118, height: 64 },
+        { ...grouper, offsetX: 0, offsetY: 0, width: 286, height: 158, target: true },
+        { ...goby, offsetX: -250, offsetY: -82, width: 164, height: 84 },
+        { ...silver, offsetX: 232, offsetY: -116, width: 154, height: 82 },
       ];
     }
     return [
@@ -3575,7 +4389,7 @@ export class DiveScene extends Phaser.Scene {
         target: true,
         grounded: true,
       },
-      { ...silver, offsetX: -272, offsetY: -184, width: 138, height: 74 },
+      { ...silver, offsetX: -272, offsetY: -184, width: 176, height: 94 },
     ];
   }
 
@@ -3634,6 +4448,19 @@ export class DiveScene extends Phaser.Scene {
       .setDepth(depth);
   }
 
+  private pulseTextAction(button: Phaser.GameObjects.Text): void {
+    if (button.getData('cta-pulse') === true) return;
+    button.setData('cta-pulse', true);
+    this.tweens.add({
+      targets: button,
+      alpha: { from: 0.72, to: 1 },
+      duration: 620,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
+  }
+
   private destroyOverlay(): void {
     this.destroyLessonOverlay();
     this.foodWebPuzzle?.destroy();
@@ -3643,6 +4470,12 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private destroyLessonOverlay(): void {
+    for (const timer of this.lessonOverlayTimers) timer.remove(false);
+    this.lessonOverlayTimers = [];
+    if (this.activeDoBridgeUtterance !== null && typeof window !== 'undefined') {
+      this.activeDoBridgeUtterance = null;
+      window.speechSynthesis?.cancel();
+    }
     for (const object of this.lessonOverlayObjects) {
       this.tweens.killTweensOf(object);
       object.destroy();
@@ -3677,6 +4510,8 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
+    this.activeDoBridgeUtterance = null;
     eventBus.off('oxygen:depleted', this.onDepleted);
     eventBus.off('station:discovered', this.onStationDiscovered);
     eventBus.off('subject:discovered', this.onSubjectDiscovered);
