@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, Palette } from '../config/constants';
 import { i18n } from '../i18n/LocaleService';
+import { inputPrompt } from '../input/ControlScheme';
 import { createResearchSurface, ResearchButton } from './ResearchUi';
 
 const PANEL_WIDTH = 980;
@@ -44,7 +45,13 @@ export class TutorialOverlay {
         .setDepth(3002),
     );
 
-    const tips = ['tutorial.move', 'tutorial.explore', 'tutorial.tools', 'tutorial.evidence', 'tutorial.oxygen'];
+    const tips = [
+      'tutorial.move',
+      'tutorial.explore',
+      'tutorial.tools',
+      'tutorial.evidence',
+      'tutorial.oxygen',
+    ];
     tips.forEach((key, i) => {
       const rowY = top + 135 + i * 74;
       const index = scene.add
@@ -59,7 +66,7 @@ export class TutorialOverlay {
       this.objects.push(
         index,
         scene.add
-        .text(cx - PANEL_WIDTH / 2 + 112, rowY, i18n.t(key), {
+          .text(cx - PANEL_WIDTH / 2 + 112, rowY, inputPrompt(scene, key), {
             fontFamily: 'sans-serif',
             fontSize: '24px',
             color: Palette.textLight,

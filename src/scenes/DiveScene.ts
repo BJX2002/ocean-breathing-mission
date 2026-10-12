@@ -11,6 +11,7 @@ import { eventBus, type GameEventMap } from '../events/EventBus';
 import { i18n } from '../i18n/LocaleService';
 import { gameState } from '../state/GameState';
 import { InputManager } from '../input/InputManager';
+import { inputPrompt } from '../input/ControlScheme';
 import { DebugOverlay } from '../debug/DebugOverlay';
 import { Diver } from '../entities/Diver';
 import { DiveMapView } from '../entities/DiveMapView';
@@ -127,6 +128,7 @@ export class DiveScene extends Phaser.Scene {
   private readonly observedSpecies = new Set<string>();
   private pendingObservationReview: GameEventMap['subject:discovered'] | null = null;
   private actionWasDown = false;
+  private cancelWasDown = false;
   private doReadingTaken = false;
   private deviceNoticeShown = false;
   private mission: Mission | null = null;
@@ -269,6 +271,10 @@ export class DiveScene extends Phaser.Scene {
   }
 
   override update(_time: number, delta: number): void {
+    this.inputManager.setTouchControlsVisible(!this.paused && !this.reportOpen);
+    this.inputManager.setTouchCancelVisible(this.viewfinderOpen);
+    if (this.viewfinderOpen) this.inputManager.setTouchActionLabel(i18n.t('touch.shutter'));
+
     if (
       this.observationReviewKey !== null &&
       Phaser.Input.Keyboard.JustDown(this.observationReviewKey)
@@ -303,6 +309,12 @@ export class DiveScene extends Phaser.Scene {
 
     const input = this.inputManager.getState();
     if (this.viewfinderOpen) {
+      if (input.cancel && !this.cancelWasDown) {
+        this.closeViewfinder();
+        this.actionWasDown = input.action;
+        this.cancelWasDown = input.cancel;
+        return;
+      }
       if (!this.oxygen.isDepleted) {
         // The viewfinder owns WASD / arrows. Do not let residual diver
         // velocity resume when the camera mode closes.
@@ -314,6 +326,7 @@ export class DiveScene extends Phaser.Scene {
         if (input.action && !this.actionWasDown) this.captureViewfinder();
       }
       this.actionWasDown = input.action;
+      this.cancelWasDown = input.cancel;
       return;
     }
 
@@ -329,6 +342,7 @@ export class DiveScene extends Phaser.Scene {
       this.updateHud(pos.x, pos.y);
     }
     this.actionWasDown = input.action;
+    this.cancelWasDown = input.cancel;
     this.debugOverlay?.update();
   }
 
@@ -504,7 +518,7 @@ export class DiveScene extends Phaser.Scene {
 
     if (task?.kind === 'station') {
       if (this.mapView.getNearestPhotographableStation(x, y, task.stationId) !== null) {
-        this.showStatus(i18n.t('dive.guidanceActionOpenViewfinder'));
+        this.openViewfinder();
         return;
       }
     }
@@ -678,11 +692,13 @@ export class DiveScene extends Phaser.Scene {
 
   private updateHud(diverX: number, diverY: number): void {
     const task = getDiveFieldTask(this.fieldTaskIndex);
+    const touchControls = this.inputManager.usesTouchControls();
     const showEnglishControls = i18n.getLocale() === 'en';
     let taskLabel = i18n.t('dive.guidanceTaskReturn');
-    let actionKey = 'WASD';
+    let actionKey = touchControls ? i18n.t('touch.joystickShort') : 'WASD';
     let actionEnglish = showEnglishControls ? 'MOVE' : '';
-    let actionLabel = i18n.t('dive.guidanceActionMoveDetailed');
+    let actionLabel = inputPrompt(this, 'dive.guidanceActionMoveDetailed');
+    let touchActionLabel = i18n.t('touch.action');
     let targetTextureKey: string | null = null;
     let targetLabel: string | null = null;
 
@@ -693,11 +709,19 @@ export class DiveScene extends Phaser.Scene {
       taskLabel = i18n
         .t(nearby ? 'dive.guidanceTaskPhotographStation' : 'dive.guidanceTaskTravelStation')
         .replace('{location}', location);
-      actionKey = nearby ? 'SPACE' : 'WASD';
+      actionKey = nearby
+        ? touchControls
+          ? i18n.t('touch.actionShort')
+          : 'SPACE'
+        : touchControls
+          ? i18n.t('touch.joystickShort')
+          : 'WASD';
       actionEnglish = showEnglishControls ? (nearby ? 'OPEN VIEWFINDER' : 'MOVE') : '';
-      actionLabel = i18n.t(
+      actionLabel = inputPrompt(
+        this,
         nearby ? 'dive.guidanceActionOpenViewfinder' : 'dive.guidanceActionMoveDetailed',
       );
+      touchActionLabel = nearby ? i18n.t('touch.viewfinder') : i18n.t('touch.action');
     } else if (task?.kind === 'subject') {
       const species = this.getSpeciesLabel(task.speciesId);
       const location = i18n.t(`dive.station${task.stationNumber}`);
@@ -707,18 +731,29 @@ export class DiveScene extends Phaser.Scene {
         .t(nearby ? 'dive.guidanceTaskPhotographSubject' : 'dive.guidanceTaskFindSubject')
         .replace('{location}', location)
         .replace('{species}', species);
-      actionKey = nearby ? 'SPACE' : 'WASD';
+      actionKey = nearby
+        ? touchControls
+          ? i18n.t('touch.actionShort')
+          : 'SPACE'
+        : touchControls
+          ? i18n.t('touch.joystickShort')
+          : 'WASD';
       actionEnglish = showEnglishControls ? (nearby ? 'TAKE PHOTO' : 'MOVE') : '';
-      actionLabel = i18n.t(
+      actionLabel = inputPrompt(
+        this,
         nearby ? 'dive.guidanceActionPhotograph' : 'dive.guidanceActionMoveDetailed',
       );
+      touchActionLabel = nearby ? i18n.t('touch.photo') : i18n.t('touch.action');
       targetTextureKey = this.getReportSpeciesTextureKey(task.speciesId);
       targetLabel = `${i18n.t('dive.guidanceTarget')}\n${species}`;
     } else if (this.isNearVessel(diverX, diverY)) {
-      actionKey = 'SPACE';
+      actionKey = touchControls ? i18n.t('touch.actionShort') : 'SPACE';
       actionEnglish = showEnglishControls ? 'FINISH' : '';
-      actionLabel = i18n.t('dive.guidanceActionFinish');
+      actionLabel = inputPrompt(this, 'dive.guidanceActionFinish');
+      touchActionLabel = i18n.t('touch.finish');
     }
+
+    this.inputManager.setTouchActionLabel(touchActionLabel);
 
     this.hud.update({
       completedTaskCount: this.fieldTaskIndex,
@@ -727,6 +762,7 @@ export class DiveScene extends Phaser.Scene {
       actionKey,
       actionEnglish,
       actionLabel,
+      touchControls,
       targetTextureKey,
       targetLabel,
     });
@@ -1024,7 +1060,7 @@ export class DiveScene extends Phaser.Scene {
         );
         add(
           this.add
-            .text(cameraX, cardY + 58, i18n.t('dive.stationPhotoPrompt'), {
+            .text(cameraX, cardY + 58, inputPrompt(this, 'dive.stationPhotoPrompt'), {
               fontFamily: 'sans-serif',
               fontSize: '17px',
               color: Palette.textMuted,
@@ -1142,7 +1178,7 @@ export class DiveScene extends Phaser.Scene {
             .text(
               cx + 320,
               top + 372,
-              `1  ${i18n.t('dive.objectiveStationInstruction')}\n\n2  ${i18n.t('dive.objectiveOrganismInstruction')}\n\n3  ${i18n.t('dive.objectiveDoInstruction')}`,
+              `1  ${inputPrompt(this, 'dive.objectiveStationInstruction')}\n\n2  ${inputPrompt(this, 'dive.objectiveOrganismInstruction')}\n\n3  ${i18n.t('dive.objectiveDoInstruction')}`,
               {
                 fontFamily: 'sans-serif',
                 fontSize: '19px',
@@ -1448,7 +1484,7 @@ export class DiveScene extends Phaser.Scene {
             .text(
               GAME_WIDTH / 2,
               700,
-              `${i18n.t('common.tipLabel')} ${i18n.t('report.todayGalleryTip')}`,
+              `${i18n.t('common.tipLabel')} ${inputPrompt(this, 'report.todayGalleryTip')}`,
               {
                 fontFamily: 'sans-serif',
                 fontSize: '22px',
@@ -1639,7 +1675,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(depth + 5);
     const toggleHint = this.add
-      .text(x, y + height / 2 - 16, i18n.t('report.photoToggleHint'), {
+      .text(x, y + height / 2 - 16, inputPrompt(this, 'report.photoToggleHint'), {
         fontFamily: 'sans-serif',
         fontSize: '19px',
         color: '#ffffff',
@@ -3479,63 +3515,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(2804);
     const controlY = bottom + 34;
-    const aimPrefix = this.add
-      .text(cx - 700, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const aimKeycaps = this.createViewfinderMovementKeycaps(cx - 625, controlY);
-    const aimControl = this.add
-      .text(cx - 375, controlY, i18n.t('dive.viewfinderAimControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const shutterPrefix = this.add
-      .text(cx - 85, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const shutterKeycap = this.createViewfinderKeycap(cx + 5, controlY, 'SPACE');
-    const shutterControl = this.add
-      .text(cx + 76, controlY, i18n.t('dive.viewfinderShutterControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: '#fff3a8',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const exitPrefix = this.add
-      .text(cx + 330, controlY, i18n.getLocale() === 'en' ? 'Press' : '按', {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const exitKeycap = this.createViewfinderKeycap(cx + 415, controlY, 'ESC');
-    const exitControl = this.add
-      .text(cx + 482, controlY, i18n.t('dive.viewfinderExitControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
+    const controlLegend = this.createViewfinderControlLegend(controlY);
     const status = this.add
       .text(right - 32, top + 61, `${Math.round(target.distance)} px`, {
         fontFamily: 'sans-serif',
@@ -3588,15 +3568,7 @@ export class DiveScene extends Phaser.Scene {
       crosshairLines,
       targetLabel,
       qualityText,
-      aimPrefix,
-      ...aimKeycaps,
-      aimControl,
-      shutterPrefix,
-      shutterKeycap,
-      shutterControl,
-      exitPrefix,
-      exitKeycap,
-      exitControl,
+      ...controlLegend,
       status,
     ];
     if (currentTargetImage !== null) this.viewfinderObjects.push(currentTargetImage);
@@ -3842,7 +3814,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(2808);
     const qualityText = this.add
-      .text(cx, bottom - 48, i18n.t('dive.organismViewfinderReady'), {
+      .text(cx, bottom - 48, inputPrompt(this, 'dive.organismViewfinderReady'), {
         fontFamily: 'sans-serif',
         fontSize: '24px',
         color: '#91e6a7',
@@ -3852,36 +3824,7 @@ export class DiveScene extends Phaser.Scene {
       .setDepth(2804);
 
     const controlY = bottom + 34;
-    const aimKeycaps = this.createViewfinderMovementKeycaps(cx - 570, controlY);
-    const aimControl = this.add
-      .text(cx - 310, controlY, i18n.t('dive.viewfinderAimControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const shutterKeycap = this.createViewfinderKeycap(cx + 5, controlY, 'SPACE');
-    const shutterControl = this.add
-      .text(cx + 76, controlY, i18n.t('dive.viewfinderShutterControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: '#fff3a8',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
-    const exitKeycap = this.createViewfinderKeycap(cx + 390, controlY, 'ESC');
-    const exitControl = this.add
-      .text(cx + 468, controlY, i18n.t('dive.viewfinderExitControl'), {
-        fontFamily: 'sans-serif',
-        fontSize: '20px',
-        color: Palette.textLight,
-        fontStyle: 'bold',
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(2804);
+    const controlLegend = this.createViewfinderControlLegend(controlY);
 
     this.viewfinderAimX = 0;
     this.viewfinderAimY = 0;
@@ -3941,15 +3884,61 @@ export class DiveScene extends Phaser.Scene {
       crosshairLines,
       targetLabel,
       qualityText,
-      ...aimKeycaps,
-      aimControl,
-      shutterKeycap,
-      shutterControl,
-      exitKeycap,
-      exitControl,
+      ...controlLegend,
     ];
     if (targetCardImage !== null) this.viewfinderObjects.push(targetCardImage);
     this.sharpenVisibleText();
+  }
+
+  private createViewfinderControlLegend(y: number): Phaser.GameObjects.GameObject[] {
+    const cx = GAME_WIDTH / 2;
+    if (this.inputManager.usesTouchControls()) {
+      return [
+        this.add
+          .text(cx, y, inputPrompt(this, 'dive.viewfinderControls'), {
+            fontFamily: 'sans-serif',
+            fontSize: '21px',
+            color: Palette.textLight,
+            fontStyle: 'bold',
+            align: 'center',
+            wordWrap: { width: 1120, useAdvancedWrap: true },
+          })
+          .setOrigin(0.5)
+          .setDepth(2804),
+      ];
+    }
+
+    const aimKeycaps = this.createViewfinderMovementKeycaps(cx - 570, y);
+    const aimControl = this.add
+      .text(cx - 310, y, i18n.t('dive.viewfinderAimControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const shutterKeycap = this.createViewfinderKeycap(cx + 5, y, 'SPACE');
+    const shutterControl = this.add
+      .text(cx + 76, y, i18n.t('dive.viewfinderShutterControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: '#fff3a8',
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    const exitKeycap = this.createViewfinderKeycap(cx + 390, y, 'ESC');
+    const exitControl = this.add
+      .text(cx + 468, y, i18n.t('dive.viewfinderExitControl'), {
+        fontFamily: 'sans-serif',
+        fontSize: '20px',
+        color: Palette.textLight,
+        fontStyle: 'bold',
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(2804);
+    return [...aimKeycaps, aimControl, shutterKeycap, shutterControl, exitKeycap, exitControl];
   }
 
   private createViewfinderKeycap(x: number, y: number, label: string): Phaser.GameObjects.Text {
@@ -4038,7 +4027,11 @@ export class DiveScene extends Phaser.Scene {
     const nextInstruction =
       nextTask?.kind === 'subject'
         ? i18n
-            .t('dive.viewfinderStationSavedNextSubject')
+            .t(
+              this.inputManager.usesTouchControls()
+                ? 'dive.viewfinderStationSavedNextSubject.touch'
+                : 'dive.viewfinderStationSavedNextSubject',
+            )
             .replace('{species}', this.getSpeciesLabel(nextTask.speciesId))
         : '';
     this.showStatus(
@@ -4063,6 +4056,7 @@ export class DiveScene extends Phaser.Scene {
     this.viewfinderOpen = false;
     this.viewfinderTarget = null;
     this.actionWasDown = false;
+    this.cancelWasDown = false;
   }
 
   private updateViewfinderAim(input: { x: number; y: number }, delta: number): void {

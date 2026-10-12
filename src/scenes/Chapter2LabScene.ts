@@ -3,6 +3,7 @@ import { GAME_HEIGHT, GAME_WIDTH, Palette, SceneKeys } from '../config/constants
 import { eventBus } from '../events/EventBus';
 import { CHAPTER2_SCIENTIST_FRAME_KEYS } from '../graphics/assetManifest';
 import { i18n } from '../i18n/LocaleService';
+import { inputPrompt } from '../input/ControlScheme';
 import { experiencePreferences } from '../state/ExperiencePreferences';
 import { gameState } from '../state/GameState';
 import type { DepthZone, Sensor } from '../types';
@@ -301,7 +302,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     });
 
     this.add
-      .text(72, GAME_HEIGHT - 58, i18n.t('lab.controls'), {
+      .text(72, GAME_HEIGHT - 58, inputPrompt(this, 'lab.controls'), {
         fontFamily: 'sans-serif',
         fontSize: '22px',
         color: '#a7c9d5',
@@ -581,7 +582,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const nearest = this.nearestZone();
     const nearby = nearest !== null && Math.abs(nearest.x - this.scientist.x) <= 155;
     this.prompt.setVisible(nearby);
-    if (nearby) this.prompt.setText(i18n.t('lab.interact'));
+    if (nearby) this.prompt.setText(inputPrompt(this, 'lab.interact'));
     const nextHighlighted = nearby ? (nearest?.id ?? null) : null;
     if (nextHighlighted !== this.highlightedZoneId) {
       this.highlightedZoneId = nextHighlighted;
@@ -601,7 +602,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   private tryInteract(): void {
     const zone = this.nearestZone();
     if (zone === null || Math.abs(zone.x - this.scientist.x) > 165) {
-      this.showToast(i18n.t('lab.interact'));
+      this.showToast(inputPrompt(this, 'lab.interact'));
       return;
     }
 
@@ -965,7 +966,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       root.add([card, numberText, text]);
     });
     const controls = this.add
-      .text(960, 742, i18n.t('lab.introControls'), {
+      .text(960, 742, inputPrompt(this, 'lab.introControls'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#f0c95a',
@@ -1155,7 +1156,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         coachRing.setPosition(buttonX, 680).setDisplaySize(310, 88);
         coachArrow.lineBetween(buttonX, 604, buttonX, 628);
         coachArrow.fillTriangle(buttonX, 646, buttonX - 13, 626, buttonX + 13, 626);
-        coachText.setPosition(buttonX, 584).setText(i18n.t('lab.experimentCoachClick'));
+        coachText.setPosition(buttonX, 584).setText(inputPrompt(this, 'lab.experimentCoachClick'));
       }
       coachPulse = this.tweens.add({
         targets: coachRing,
@@ -2375,17 +2376,12 @@ export class Chapter2LabScene extends Phaser.Scene {
       } else if (selectedSensor === null) {
         selectedText.setText(i18n.t('lab.selectDeviceFirst')).setColor('#d6f4f5');
       } else {
+        const placementInstruction =
+          selectedSensor.id === 'vessel-sampling'
+            ? i18n.t('lab.placeVesselNext')
+            : inputPrompt(this, 'lab.placeDeviceNext');
         selectedText
-          .setText(
-            this.format(
-              selectedSensor.id === 'vessel-sampling'
-                ? 'lab.placeVesselNext'
-                : 'lab.placeDeviceNext',
-              {
-                name: sensorName(selectedSensor),
-              },
-            ),
-          )
+          .setText(placementInstruction.replace('{name}', sensorName(selectedSensor)))
           .setColor('#d6f4f5');
       }
 
@@ -2583,7 +2579,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       wordWrap: { width: 430, useAdvancedWrap: true },
     });
     const coverageHint = this.add
-      .text(1390, 390, i18n.t('lab.resultCoverageHint'), {
+      .text(1390, 390, inputPrompt(this, 'lab.resultCoverageHint'), {
         fontFamily: 'sans-serif',
         fontSize: '23px',
         color: '#a7cbd4',

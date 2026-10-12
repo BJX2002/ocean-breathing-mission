@@ -28,6 +28,12 @@ npm run dev     # Start the dev server | 啟動開發伺服器
 Then open the URL printed by Vite (default `http://localhost:5173`).
 接著開啟 Vite 顯示的網址（預設 `http://localhost:5173`）。
 
+The same web build supports desktop and iPad—there is no separate native app.
+On iPad, open the published URL in Safari and rotate to landscape.
+
+桌面版與 iPad 共用同一份網頁版，不需要另外製作原生 App。iPad 使用 Safari
+開啟線上網址後，轉為橫向即可遊玩。
+
 ### Browser-compatible opening videos | 瀏覽器片頭轉碼
 
 The supplied masters are HEVC/H.265 MP4 files. Most web builds need H.264 video
@@ -75,8 +81,8 @@ Source: GitHub Actions**；之後更新會自動上線。
 
 ## Scripts | 指令
 
-| Command                | Description                   | 說明                 |
-| ---------------------- | ----------------------------- | -------------------- |
+| Command              | Description                   | 說明                 |
+| -------------------- | ----------------------------- | -------------------- |
 | `npm run dev`        | Start Vite dev server         | 啟動開發伺服器       |
 | `npm run build`      | Type-check + production build | 型別檢查並打包正式版 |
 | `npm run preview`    | Preview the production build  | 預覽正式版           |
@@ -100,7 +106,15 @@ FPS，並可用 `O` 鍵切換溶氧情境。
 - **Keyboard | 鍵盤**: WASD or arrow keys to move, E for the fixed-station
   viewfinder, and Space to photograph organisms or return with complete evidence.
 - **Mouse | 滑鼠**: click UI buttons.
-- **Touch | 觸控**: drag to move (virtual joystick), tap UI buttons.
+- **Touch | 觸控**: use the visible left joystick to move or aim; use the
+  right button for actions and the shutter. Chapter 2 workstations can be tapped
+  directly. 使用左側可見搖杆移動／瞄準，右側按鈕操作／拍照；第二章可直接點按工作站。
+
+For desktop QA of the tablet layout, append `?controls=touch` to the URL. Use
+`?controls=keyboard` to force keyboard prompts on a touch-capable device.
+
+要在電腦上檢查 iPad 介面，可在網址後加 `?controls=touch`；若觸控裝置需要強制
+顯示鍵盤說明，則使用 `?controls=keyboard`。
 
 ## Project structure | 專案結構
 

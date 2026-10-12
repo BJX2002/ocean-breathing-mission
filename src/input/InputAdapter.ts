@@ -6,6 +6,8 @@ export interface InputState {
   y: number;
   /** Whether the primary action (photograph/scan) is active. */
   action: boolean;
+  /** Whether the secondary/cancel action is active. */
+  cancel: boolean;
 }
 
 /**
@@ -21,5 +23,5 @@ export interface InputAdapter {
 }
 
 export function emptyInputState(): InputState {
-  return { x: 0, y: 0, action: false };
+  return { x: 0, y: 0, action: false, cancel: false };
 }

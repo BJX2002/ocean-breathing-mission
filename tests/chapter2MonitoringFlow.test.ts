@@ -196,7 +196,7 @@ describe('Chapter 2 monitoring teaching flow', () => {
     );
 
     expect(en['lab.resultCoverageTitle']).toBe('3 × 3 MONITORING GRID');
-    expect(result).toContain(".text(1390, 390, i18n.t('lab.resultCoverageHint')");
+    expect(result).toContain(".text(1390, 390, inputPrompt(this, 'lab.resultCoverageHint')");
     expect(result).toContain('.setOrigin(1, 0);');
   });
 

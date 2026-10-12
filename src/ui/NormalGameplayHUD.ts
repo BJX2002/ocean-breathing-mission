@@ -18,6 +18,7 @@ export interface NormalGameplayHUDState {
   readonly actionKey: string;
   readonly actionEnglish: string;
   readonly actionLabel: string;
+  readonly touchControls: boolean;
   readonly targetTextureKey?: string | null;
   readonly targetLabel?: string | null;
 }
@@ -169,6 +170,7 @@ export class NormalGameplayHUD {
       state.actionKey,
       state.actionEnglish,
       state.actionLabel,
+      state.touchControls,
       state.targetTextureKey ?? '',
       state.targetLabel ?? '',
       i18n.getLocale(),
@@ -187,14 +189,22 @@ export class NormalGameplayHUD {
       i18n.t('dive.guidanceCurrentTask').replace('{task}', state.taskLabel),
     );
     this.actionKey.setText(state.actionKey);
-    this.actionPrefix.setText(i18n.getLocale() === 'en' ? 'Press' : '按');
+    this.actionPrefix.setText(
+      state.touchControls
+        ? i18n.getLocale() === 'en'
+          ? 'Use'
+          : '使用'
+        : i18n.getLocale() === 'en'
+          ? 'Press'
+          : '按',
+    );
     this.actionEnglish.setText('');
     this.actionLabel.setText(state.actionLabel);
     const targetVisible = this.updateTargetCard(
       state.targetTextureKey ?? null,
       state.targetLabel ?? null,
     );
-    this.updateActionLayout(state.actionKey === 'WASD', targetVisible);
+    this.updateActionLayout(!state.touchControls && state.actionKey === 'WASD', targetVisible);
     this.drawMissionPanel(completed, state.totalTaskCount);
   }
 
@@ -312,10 +322,7 @@ export class NormalGameplayHUD {
     return true;
   }
 
-  private updateActionLayout(
-    movement: boolean,
-    targetVisible: boolean,
-  ): void {
+  private updateActionLayout(movement: boolean, targetVisible: boolean): void {
     this.actionKeycap.setVisible(!movement);
     this.actionKey.setVisible(!movement);
     for (const keycap of this.movementKeycaps) keycap.setVisible(movement);
