@@ -45,15 +45,15 @@ describe('Chapter 1 guidance flow', () => {
     expect(viewfinder).not.toContain('this.openSubjectViewfinder(');
   });
 
-  it('uses SPACE for both opening the station viewfinder and photographing organisms', () => {
+  it('uses the shared action input for the station viewfinder and organism photos', () => {
     const action = section(
       source,
       'private handleAction(x: number, y: number): void',
       'private getSpeciesLabel(',
     );
 
-    expect(action).not.toContain('this.openViewfinder();');
-    expect(action).toContain("this.showStatus(i18n.t('dive.guidanceActionOpenViewfinder'))");
+    expect(action).toContain('this.openViewfinder();');
+    expect(action).not.toContain("this.showStatus(i18n.t('dive.guidanceActionOpenViewfinder'))");
     expect(action).toContain('this.mapView.tryPhotographSubject(x, y, task.speciesId)');
     expect(action).toContain('this.playShutterSound()');
     expect(action).toContain(".t('dive.guidanceSubjectComplete')");
@@ -69,10 +69,12 @@ describe('Chapter 1 guidance flow', () => {
 
     expect(hudFlow).toContain('targetTextureKey = this.getReportSpeciesTextureKey(task.speciesId)');
     expect(hudFlow).toContain("targetLabel = `${i18n.t('dive.guidanceTarget')}");
-    expect(hudFlow).toContain("actionKey = nearby ? 'SPACE' : 'WASD'");
+    expect(hudFlow).toContain('const touchControls = this.inputManager.usesTouchControls()');
+    expect(hudFlow).toContain("i18n.t('touch.joystickShort')");
+    expect(hudFlow).toContain("i18n.t('touch.actionShort')");
     expect(hudFlow).toContain("nearby ? 'TAKE PHOTO' : 'MOVE'");
     expect(hudFlow).toContain("const showEnglishControls = i18n.getLocale() === 'en'");
-    expect(hudFlow).toContain("i18n.t('dive.guidanceActionMoveDetailed')");
+    expect(hudFlow).toContain("inputPrompt(this, 'dive.guidanceActionMoveDetailed')");
     expect(hudSource).toContain('private updateTargetCard(');
     expect(hudSource).toContain('this.targetImage.setTexture(textureKey)');
     expect(hudSource).toContain("['W ↑', 'A ←', 'S ↓', 'D →']");
@@ -103,7 +105,8 @@ describe('Chapter 1 guidance flow', () => {
 
     expect(advance).toContain('this.syncGuidedTarget();');
     expect(advance).toContain('this.updateHud(position.x, position.y);');
-    expect(capture).toContain(".t('dive.viewfinderStationSavedNextSubject')");
+    expect(capture).toContain("'dive.viewfinderStationSavedNextSubject.touch'");
+    expect(capture).toContain("'dive.viewfinderStationSavedNextSubject'");
     expect(guidedStyle).toContain('if (this.guided) {');
     expect(guidedStyle).toContain('setStrokeStyle(4, 0xf0c95a, 0.9)');
     expect(focusStyle).toContain('this.guided ? 0xf0c95a : 0x3fd0c9');

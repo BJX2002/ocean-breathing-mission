@@ -37,7 +37,7 @@ describe('Chapter 2 experiment guidance and product reveal', () => {
     expect(experiment).toContain('renderCoachmark(2);');
     expect(experiment).toContain('renderCoachmark(3);');
     expect(experiment).toContain("i18n.t('lab.experimentCoachDrag')");
-    expect(experiment).toContain("i18n.t('lab.experimentCoachClick')");
+    expect(experiment).toContain("inputPrompt(this, 'lab.experimentCoachClick')");
     expect(experiment).toContain('coachPulse?.stop();');
   });
 

@@ -21,8 +21,11 @@
       }
 
       #game {
-        width: 100vw;
-        height: 100vh;
+        box-sizing: border-box;
+        width: 100dvw;
+        height: 100dvh;
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+          env(safe-area-inset-left);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -31,11 +34,37 @@
       #game canvas {
         max-width: 100%;
         max-height: 100%;
+        touch-action: none;
+      }
+
+      #orientation-message {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        color: #e7fbff;
+        background: #04121f;
+        font:
+          600 24px/1.55 Arial,
+          sans-serif;
+        text-align: center;
+      }
+
+      @media (orientation: portrait) and (pointer: coarse) {
+        #orientation-message {
+          display: flex;
+        }
       }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="orientation-message">
+      請將 iPad 轉為橫向以開始調查<br />Rotate your iPad to landscape to play
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
