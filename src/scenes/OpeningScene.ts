@@ -5,6 +5,8 @@ import { i18n } from '../i18n/LocaleService';
 import { gameState } from '../state/GameState';
 import { experiencePreferences } from '../state/ExperiencePreferences';
 import { ensureEdgeTransparentTexture } from '../graphics/TextureFactory';
+import { CHAPTER1_ART_MANIFEST } from '../graphics/assetManifest';
+import { queueSceneArt } from '../graphics/SceneArtLoader';
 import { createResearchSurface } from '../ui/ResearchUi';
 import {
   getOpeningVideoFile,
@@ -109,6 +111,10 @@ export class OpeningScene extends Phaser.Scene {
 
   init(data?: OpeningSceneData): void {
     this.startWithNarration = data?.startWithNarration === true;
+  }
+
+  preload(): void {
+    queueSceneArt(this, CHAPTER1_ART_MANIFEST);
   }
 
   create(): void {
