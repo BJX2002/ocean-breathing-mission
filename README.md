@@ -79,6 +79,16 @@ Pages → Source: GitHub Actions** once; later pushes deploy automatically.
 `dist/` 發布到 GitHub Pages。第一次只需在倉庫選擇 **Settings → Pages →
 Source: GitHub Actions**；之後更新會自動上線。
 
+The production build publishes only browser-ready media: display-sized WebP
+art plus the six H.264 opening videos. The menu loads only its cover; each
+chapter loads its own art on demand with a visible progress bar. This keeps the
+same URL practical on both desktop and iPad without shipping the source-art
+archive to every player.
+
+正式版只會發布瀏覽器實際需要的素材：按顯示尺寸處理的 WebP 圖片與六段 H.264
+片頭影片。首頁只載入封面，進入章節時才載入該章素材並顯示真實進度；因此電腦與
+iPad 可共用同一網址，也不會讓每位玩家下載整個原始素材庫。
+
 ## Scripts | 指令
 
 | Command              | Description                   | 說明                 |

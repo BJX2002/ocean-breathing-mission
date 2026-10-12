@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, Palette, SceneKeys } from '../config/constants';
 import { eventBus } from '../events/EventBus';
-import { CHAPTER2_SCIENTIST_FRAME_KEYS } from '../graphics/assetManifest';
+import {
+  CHAPTER2_ART_MANIFEST,
+  CHAPTER2_SCIENTIST_FRAME_KEYS,
+} from '../graphics/assetManifest';
+import { queueSceneArt } from '../graphics/SceneArtLoader';
 import { i18n } from '../i18n/LocaleService';
 import { inputPrompt } from '../input/ControlScheme';
 import { experiencePreferences } from '../state/ExperiencePreferences';
@@ -102,6 +106,10 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.progressDots.length = 0;
     this.deploymentPlacements.clear();
     this.repairedDeploymentCells.clear();
+  }
+
+  preload(): void {
+    queueSceneArt(this, CHAPTER2_ART_MANIFEST);
   }
 
   create(): void {

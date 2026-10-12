@@ -5,7 +5,9 @@ import { i18n } from '../i18n/LocaleService';
 import { loadGameData } from '../services/DataLoader';
 import { gameState } from '../state/GameState';
 import { ensureTextures } from '../graphics/TextureFactory';
-import { ART_MANIFEST } from '../graphics/assetManifest';
+import { CORE_ART_MANIFEST } from '../graphics/assetManifest';
+
+const ART_PROGRESS_SHARE = 0.8;
 
 /**
  * Loads external art (if any), generates procedural placeholders for anything
@@ -47,10 +49,13 @@ export class PreloadScene extends Phaser.Scene {
     };
     drawFill(0);
 
-    this.loadArtThen(() => {
+    this.loadArtThen(drawFill, label, () => {
       // Bake procedural placeholders only for keys not provided by real art.
       ensureTextures(this);
-      void this.loadAll(drawFill, label);
+      void this.loadAll(
+        (progress) => drawFill(ART_PROGRESS_SHARE + progress * (1 - ART_PROGRESS_SHARE)),
+        label,
+      );
     });
   }
 
@@ -58,8 +63,12 @@ export class PreloadScene extends Phaser.Scene {
    * Queue any external art from the manifest, then invoke `next`. Missing files
    * are logged and skipped so the game still runs with placeholders.
    */
-  private loadArtThen(next: () => void): void {
-    if (ART_MANIFEST.length === 0) {
+  private loadArtThen(
+    drawFill: (progress: number) => void,
+    label: Phaser.GameObjects.Text,
+    next: () => void,
+  ): void {
+    if (CORE_ART_MANIFEST.length === 0) {
       next();
       return;
     }
@@ -68,7 +77,13 @@ export class PreloadScene extends Phaser.Scene {
       console.warn(`[PreloadScene] Missing art asset "${file.key}" (${file.url}); using placeholder.`);
     });
 
-    for (const asset of ART_MANIFEST) {
+    this.load.on(Phaser.Loader.Events.PROGRESS, (progress: number) => {
+      const overallProgress = progress * ART_PROGRESS_SHARE;
+      drawFill(overallProgress);
+      label.setText(`${i18n.t('loading.label')} ${Math.round(overallProgress * 100)}%`);
+    });
+
+    for (const asset of CORE_ART_MANIFEST) {
       if (asset.type === 'image') {
         this.load.image(asset.key, asset.url);
       } else {
