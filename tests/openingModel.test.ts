@@ -24,6 +24,18 @@ describe('Chapter 1 opening model', () => {
     expect(resolveOpeningVoice('eng')).toBe('eng');
   });
 
+  it('uses a smaller fast-start opening on touch devices without changing desktop media', () => {
+    expect(getOpeningVideoFile('op01', 'can', 'desktop')).toContain(
+      '/OP_NEW/OP1_Cantonese.web.mp4',
+    );
+    expect(getOpeningVideoFile('op01', 'can', 'tablet')).toContain(
+      '/OP_NEW/OP1_Cantonese.tablet.mp4',
+    );
+    expect(getOpeningVideoFile('op02', 'eng', 'tablet')).toContain(
+      '/OP_NEW/OP2_English.tablet.mp4',
+    );
+  });
+
   it('keeps the opening stage order explicit', () => {
     expect(nextOpeningStage('op01')).toBe('photoReview');
     expect(nextOpeningStage('photoReview')).toBe('photoConclusion');

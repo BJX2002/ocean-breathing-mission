@@ -1331,7 +1331,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5);
-    const product = this.add.image(500, 560, 'chapter2-do-sensor-product').setDisplaySize(470, 274);
+    const product = this.add.image(500, 560, 'chapter2-do-sensor-product').setDisplaySize(470, 313);
     const productReference = this.add
       .text(500, 770, i18n.t('lab.productReference'), {
         fontFamily: 'monospace',
