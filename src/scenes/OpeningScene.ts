@@ -7,6 +7,7 @@ import { experiencePreferences } from '../state/ExperiencePreferences';
 import { ensureEdgeTransparentTexture } from '../graphics/TextureFactory';
 import { CHAPTER1_ART_MANIFEST } from '../graphics/assetManifest';
 import { queueSceneArt } from '../graphics/SceneArtLoader';
+import { usesTouchControls } from '../input/ControlScheme';
 import { createResearchSurface } from '../ui/ResearchUi';
 import {
   getOpeningVideoFile,
@@ -260,7 +261,11 @@ export class OpeningScene extends Phaser.Scene {
     video.once('error', () => this.renderVideoFallback(stage));
     video.on('locked', () => this.handleVideoLocked());
     const videoUrl = new URL(
-      getOpeningVideoFile(stage, resolveOpeningVoice(this.voice)),
+      getOpeningVideoFile(
+        stage,
+        resolveOpeningVoice(this.voice),
+        usesTouchControls(this) ? 'tablet' : 'desktop',
+      ),
       document.baseURI,
     ).toString();
     // Keep the AAC track attached. Passing true here tells Phaser to create a

@@ -56,3 +56,4 @@ public/assets/chapter1/op2/*.hevc*.mp4
 public/assets/chapter1/archive/
 public/assets/chapter1/OP_NEW/*.mp4
 !public/assets/chapter1/OP_NEW/*.web.mp4
+!public/assets/chapter1/OP_NEW/*.tablet.mp4

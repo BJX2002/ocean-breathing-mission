@@ -6,11 +6,17 @@ import { defineConfig, type Plugin } from 'vite';
 const PROJECT_ROOT = fileURLToPath(new URL('.', import.meta.url));
 const OPENING_VIDEOS = [
   'OP1_Cantonese.web.mp4',
+  'OP1_Cantonese.tablet.mp4',
   'OP1_English.web.mp4',
+  'OP1_English.tablet.mp4',
   'OP1_Mandarian.web.mp4',
+  'OP1_Mandarian.tablet.mp4',
   'OP2_Cantonese.web.mp4',
+  'OP2_Cantonese.tablet.mp4',
   'OP2_English.web.mp4',
+  'OP2_English.tablet.mp4',
   'OP2_Mandarian.web.mp4',
+  'OP2_Mandarian.tablet.mp4',
 ] as const;
 
 /** Copy only browser-ready runtime media instead of the 475 MB source archive. */

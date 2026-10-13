@@ -54,7 +54,7 @@ describe('Chapter 2 experiment guidance and product reveal', () => {
     expect(unlock).toContain('1640,\n      920,');
     expect(unlock).toContain('createResearchSurface(this, 500, 585, 560, 430');
     expect(unlock).toContain(".image(500, 560, 'chapter2-do-sensor-product')");
-    expect(unlock).toContain('.setDisplaySize(470, 274)');
+    expect(unlock).toContain('.setDisplaySize(470, 313)');
     expect(unlock).toContain('const columnDivider = this.add');
     expect(unlock).toContain(".text(1290, 375, i18n.t('lab.unlockPrincipleHeading')");
     expect(unlock).toContain("['01', 1030, 'lab.unlockPrincipleOxygen']");

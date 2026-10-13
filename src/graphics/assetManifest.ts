@@ -140,7 +140,7 @@ export const CHAPTER2_ART_MANIFEST: readonly ArtAsset[] = [
   {
     type: 'image',
     key: 'chapter2-do-sensor-product',
-    url: runtimeImage('chapter2/do-sensor-product-v1'),
+    url: runtimeImage('chapter2/do-sensor-product-v2'),
   },
   ...CHAPTER2_SCIENTIST_FRAME_KEYS.map((key, frameIndex): ArtAsset => {
     const sourceFrame = [0, 8, 20, 26][frameIndex] ?? 0;

@@ -2,18 +2,25 @@ import type { NarrationVoice } from '../state/ExperiencePreferences';
 
 export type OpeningVoice = NarrationVoice;
 export type OpeningStage = 'op01' | 'photoReview' | 'photoConclusion' | 'op02';
+export type OpeningVideoProfile = 'desktop' | 'tablet';
 
 /** UI language and narration are deliberately independent choices. */
 export function resolveOpeningVoice(requested: OpeningVoice): OpeningVoice {
   return requested;
 }
 
-export function getOpeningVideoFile(stage: 'op01' | 'op02', voice: OpeningVoice): string {
+export function getOpeningVideoFile(
+  stage: 'op01' | 'op02',
+  voice: OpeningVoice,
+  profile: OpeningVideoProfile = 'desktop',
+): string {
   const language = voice === 'can' ? 'Cantonese' : voice === 'pth' ? 'Mandarian' : 'English';
   const opening = stage === 'op01' ? 'OP1' : 'OP2';
-  // OP_NEW contains the final, subtitled masters. Browser delivery copies use
-  // H.264/AAC and fast-start metadata while the supplied HEVC files stay intact.
-  return `assets/chapter1/OP_NEW/${opening}_${language}.web.mp4`;
+  // Tablet copies keep the same subtitles and narration while using a 720p,
+  // fast-start encode. This avoids making iPad Safari fetch a 10–11 MB 1080p
+  // first clip before it can display the opening frame.
+  const suffix = profile === 'tablet' ? 'tablet' : 'web';
+  return `assets/chapter1/OP_NEW/${opening}_${language}.${suffix}.mp4`;
 }
 
 export function nextOpeningStage(stage: OpeningStage): OpeningStage | 'dive' {
