@@ -153,6 +153,9 @@ describe('Chapter 2 monitoring teaching flow', () => {
     expect(result).toContain('activeCell.lowOxygenDetected');
     expect(result).toContain("i18n.t('lab.resultRepairCompleted')");
     expect(result).toContain('if (snapshot.success)');
+    expect(result).toContain('const hasNextToolTrial =');
+    expect(result).toContain('nextToolHighlight');
+    expect(result).toContain('repeat: -1');
     expect(source).not.toContain('DoTimelineChart');
   });
 

@@ -282,6 +282,8 @@
   "report.doBridgeProblem": "問題是——照片只看到一個時刻；一次讀數也可能錯過清晨近海床的低氧。",
   "report.doBridgeSolution": "所以要——用多個位置、多個深度、連續時間的感測器去監測。",
   "report.doBridgeVoiceReplay": "播放語音",
+  "report.doBridgeVoicePlaying": "語音播放中…",
+  "report.doBridgeVoiceUnavailable": "此裝置未提供所選語音",
   "report.doBridgeListenFirst": "請先聽完整段語音",
   "report.doBridgeVoiceRetry": "語音未完成，請重新播放",
   "report.enterChapter2": "進入第二章：設計監測網",

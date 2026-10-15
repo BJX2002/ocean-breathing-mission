@@ -767,6 +767,7 @@ export class OpeningScene extends Phaser.Scene {
   }
 
   private renderPhotoConclusion(): void {
+    const touchLayout = usesTouchControls(this);
     this.uiObjects.push(
       this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x04131f, 1).setOrigin(0).setDepth(-10),
     );
@@ -796,7 +797,7 @@ export class OpeningScene extends Phaser.Scene {
         `${i18n.t('common.questionLabel')} ${i18n.t('opening.photoConclusionQuestion')}`,
         {
           fontFamily: 'sans-serif',
-          fontSize: '40px',
+          fontSize: touchLayout ? '48px' : '40px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',
@@ -841,7 +842,7 @@ export class OpeningScene extends Phaser.Scene {
       const choiceText = this.add
         .text(centerX, centerY, `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`, {
           fontFamily: 'sans-serif',
-          fontSize: '31px',
+          fontSize: touchLayout ? '36px' : '31px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',

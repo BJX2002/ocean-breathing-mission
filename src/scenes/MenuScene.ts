@@ -49,6 +49,8 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     const chapter1DebugScreens = new Set([
+      'archive',
+      'photo-conclusion',
       'report',
       'food-chain',
       'food-lesson',

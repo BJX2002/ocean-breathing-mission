@@ -45,11 +45,11 @@ describe('chapter selection reliability and requested UI polish', () => {
     );
     expect(dive).toContain('wordWrap: { width: 1380, useAdvancedWrap: true }');
     expect(dive).toContain('610 + choiceIndex * 700');
-    expect(dive).toContain('620,\n          140,');
+    expect(dive).toMatch(/620,\s+140,/);
     expect(dive).toContain('fontSize: 28, lineSpacing: 8');
     expect(lab).toContain('createResearchSurface(this, 960, 470, 1240, 150');
     expect(lab).toContain('630 + index * 660');
-    expect(lab).toContain('620,\n        140,');
+    expect(lab).toMatch(/620,\s+140,/);
     expect(lab).toContain('fontSize: 26, lineSpacing: 8');
   });
 

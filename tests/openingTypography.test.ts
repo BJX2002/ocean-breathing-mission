@@ -24,8 +24,8 @@ describe('Chapter 1 archive typography', () => {
       'createResearchSurface(this, GAME_WIDTH / 2, GAME_HEIGHT / 2, 1480, 820',
     );
     expect(openingSource).toContain('.rectangle(centerX, centerY, 580, 180, 0x123c50, 1)');
-    expect(openingSource).toMatch(/photoConclusionQuestion'[\s\S]*?fontSize: '40px'/);
-    expect(openingSource).toMatch(/i18n\.t\(choice\.key\)[\s\S]*?fontSize: '31px'/);
+    expect(openingSource).toContain("fontSize: touchLayout ? '48px' : '40px'");
+    expect(openingSource).toContain("fontSize: touchLayout ? '36px' : '31px'");
   });
 
   it('uses the lower archive canvas instead of leaving a large empty footer', () => {

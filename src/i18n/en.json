@@ -282,6 +282,8 @@
   "report.doBridgeProblem": "PROBLEM — A photo shows one moment, and one reading may miss low oxygen near the seabed before dawn.",
   "report.doBridgeSolution": "THEREFORE — Monitor continuously at multiple locations and depths.",
   "report.doBridgeVoiceReplay": "PLAY VOICE",
+  "report.doBridgeVoicePlaying": "PLAYING…",
+  "report.doBridgeVoiceUnavailable": "VOICE UNAVAILABLE",
   "report.doBridgeListenFirst": "Listen to the full narration first",
   "report.doBridgeVoiceRetry": "Narration stopped — play it again",
   "report.enterChapter2": "Enter Chapter 2: Design the network",

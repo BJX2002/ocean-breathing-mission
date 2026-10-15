@@ -141,7 +141,6 @@ export class DiveScene extends Phaser.Scene {
   private lessonOverlayTimers: Phaser.Time.TimerEvent[] = [];
   private foodWebPuzzle: FoodWebPuzzle | null = null;
   private doBridgeNarrationPlayed = false;
-  private doBridgeNarrationCompleted = false;
   private activeDoBridgeUtterance: SpeechSynthesisUtterance | null = null;
 
   private readonly onDepleted = (payload: GameEventMap['oxygen:depleted']): void => {
@@ -210,7 +209,6 @@ export class DiveScene extends Phaser.Scene {
     this.observedSpecies.clear();
     this.pendingObservationReview = null;
     this.doBridgeNarrationPlayed = false;
-    this.doBridgeNarrationCompleted = false;
     this.activeDoBridgeUtterance = null;
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Dive });
     this.atmosphere = new Atmosphere(this, { showSurface: true });
@@ -2654,39 +2652,63 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3002);
+    const narrationHighlight = this.add
+      .rectangle(GAME_WIDTH / 2, 495, 1180, 500, 0xf0c95a, 0.015)
+      .setStrokeStyle(4, Palette.gold, 0.9)
+      .setDepth(3001.5)
+      .setVisible(false);
     const button = new ResearchButton(
       this,
-      GAME_WIDTH / 2,
+      1280,
       825,
-      430,
-      72,
+      360,
+      64,
       i18n.t('report.startRecap'),
-      { tone: 'primary', fontSize: 27, depth: 3002 },
+      { tone: 'primary', fontSize: 24, depth: 3003 },
     );
-    button.setEnabled(this.doBridgeNarrationCompleted);
-    if (!this.doBridgeNarrationCompleted) button.setText(i18n.t('report.doBridgeListenFirst'));
     button.onPress(() => this.showChapter1Recap());
+    const voiceButton = new ResearchButton(
+      this,
+      860,
+      825,
+      300,
+      64,
+      i18n.t('report.doBridgeVoiceReplay'),
+      { tone: 'secondary', fontSize: 22, depth: 3003 },
+    );
+    const stopNarrationHighlight = (): void => {
+      this.tweens.killTweensOf(narrationHighlight);
+      narrationHighlight.setVisible(false).setAlpha(1).setScale(1);
+    };
     const playRequiredNarration = (): void => {
-      button.setText(i18n.t('report.doBridgeListenFirst')).setEnabled(false);
+      if (this.activeDoBridgeUtterance !== null) return;
+      voiceButton.setText(i18n.t('report.doBridgeVoicePlaying')).setEnabled(false);
+      narrationHighlight.setVisible(true);
+      this.tweens.add({
+        targets: narrationHighlight,
+        alpha: { from: 0.25, to: 1 },
+        duration: 560,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
       const started = this.speakDoBridgeExplanation(
         () => {
-          this.doBridgeNarrationCompleted = true;
-          button.setText(i18n.t('report.startRecap')).setEnabled(true);
+          stopNarrationHighlight();
+          voiceButton.setText(i18n.t('report.doBridgeVoiceReplay')).setEnabled(true);
         },
-        () => button.setText(i18n.t('report.doBridgeVoiceRetry')).setEnabled(false),
+        () => {
+          stopNarrationHighlight();
+          voiceButton.setText(i18n.t('report.doBridgeVoiceRetry')).setEnabled(true);
+        },
       );
-      // Avoid trapping a learner on devices with no speech-synthesis API.
       if (!started) {
-        this.doBridgeNarrationCompleted = true;
-        button.setText(i18n.t('report.startRecap')).setEnabled(true);
+        stopNarrationHighlight();
+        voiceButton.setText(i18n.t('report.doBridgeVoiceUnavailable')).setEnabled(true);
       }
     };
-    dim.on(Phaser.Input.Events.POINTER_UP, () => {
-      if (!this.doBridgeNarrationCompleted && this.activeDoBridgeUtterance === null) {
-        playRequiredNarration();
-      }
-    });
-    const back = new ResearchButton(this, 470, 825, 260, 64, i18n.t('common.backStep'), {
+    voiceButton.onPress(playRequiredNarration);
+    const back = new ResearchButton(this, 440, 825, 250, 64, i18n.t('common.backStep'), {
       tone: 'secondary',
       fontSize: 22,
       depth: 3003,
@@ -2700,7 +2722,9 @@ export class DiveScene extends Phaser.Scene {
       ...conceptCards,
       problem,
       solution,
+      narrationHighlight,
       button.root,
+      voiceButton.root,
       back.root,
     ];
     if (!this.doBridgeNarrationPlayed) {
@@ -2739,19 +2763,19 @@ export class DiveScene extends Phaser.Scene {
     synthesizer.cancel();
     synthesizer.resume();
     const utterance = new SpeechSynthesisUtterance(script.text);
-    this.activeDoBridgeUtterance = utterance;
     utterance.lang = script.lang;
-    utterance.rate = 0.88;
+    utterance.rate = 1;
     utterance.pitch = 1;
-    const languageRoot = script.lang.toLowerCase().split('-')[0] ?? script.lang.toLowerCase();
-    const matchingVoice =
-      window.speechSynthesis
-        .getVoices()
-        .find((voice) => voice.lang.toLowerCase().startsWith(script.lang.toLowerCase())) ??
-      window.speechSynthesis
-        .getVoices()
-        .find((voice) => voice.lang.toLowerCase().startsWith(languageRoot));
+    const normalizedLanguage = script.lang.toLowerCase().replace('_', '-');
+    const availableVoices = window.speechSynthesis.getVoices();
+    const matchingVoice = availableVoices.find(
+      (voice) => voice.lang.toLowerCase().replace('_', '-') === normalizedLanguage,
+    );
+    // Never replace Cantonese with an arbitrary zh-* voice. On WebKit the
+    // broad fallback could silently turn a Cantonese choice into Mandarin.
+    if (availableVoices.length > 0 && matchingVoice === undefined) return false;
     if (matchingVoice !== undefined) utterance.voice = matchingVoice;
+    this.activeDoBridgeUtterance = utterance;
     utterance.onend = () => {
       if (this.activeDoBridgeUtterance !== utterance) return;
       this.activeDoBridgeUtterance = null;
