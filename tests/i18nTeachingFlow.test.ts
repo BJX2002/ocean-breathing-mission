@@ -85,21 +85,18 @@ describe('teaching-flow copy', () => {
     expect(en['lab.introStart']).toContain('FIRST STEP');
   });
 
-  it('auto-plays the DO bridge once, blocks progress until completion, and has no replay button', () => {
+  it('auto-plays the DO bridge once without blocking progress and offers replay', () => {
     const source = readFileSync(`${process.cwd()}/src/scenes/DiveScene.ts`, 'utf8');
     const bridge = section(source, 'private showDoBridge(): void', 'private enterChapter2(): void');
 
-    expect(bridge).not.toContain("i18n.t('report.doBridgeVoiceReplay')");
+    expect(bridge).toContain("i18n.t('report.doBridgeVoiceReplay')");
     expect(bridge).toContain('if (!this.doBridgeNarrationPlayed)');
-    expect(bridge).toContain('experiencePreferences.getVoice()');
-    expect(bridge).toContain('this.activeDoBridgeUtterance = utterance;');
-    expect(bridge).toContain('synthesizer.speak(utterance);');
-    expect(bridge).toContain('button.setEnabled(this.doBridgeNarrationCompleted);');
-    expect(bridge).toContain(
-      "button.setText(i18n.t('report.doBridgeListenFirst')).setEnabled(false)",
-    );
-    expect(zhHant['report.doBridgeListenFirst']).toContain('聽完');
-    expect(en['report.doBridgeListenFirst']).toContain('full narration');
+    expect(bridge).toContain("this.playNarrationCue('report-do-bridge'");
+    expect(bridge).toContain('narrationService.isPlaying()');
+    expect(bridge).toContain('playRequiredNarration(true);');
+    expect(bridge).not.toContain('button.setEnabled(this.doBridgeNarrationCompleted);');
+    expect(bridge).toContain('voiceButton.onPress(() => playRequiredNarration(false));');
+    expect(bridge).not.toContain('SpeechSynthesisUtterance');
   });
 
   it('makes the historical-photo hotspot action explicit', () => {

@@ -78,6 +78,10 @@ describe('Chapter 1 guidance flow', () => {
     expect(hudSource).toContain('private updateTargetCard(');
     expect(hudSource).toContain('this.targetImage.setTexture(textureKey)');
     expect(hudSource).toContain("['W ↑', 'A ←', 'S ↓', 'D →']");
+    expect(hudSource).toContain('const TOUCH_NOTIFICATION_X = 1260;');
+    expect(hudSource).toContain(
+      'state.touchControls ? TOUCH_NOTIFICATION_X : DESKTOP_NOTIFICATION_X',
+    );
   });
 
   it('activates the next organism and refreshes its guidance in the station-photo frame', () => {

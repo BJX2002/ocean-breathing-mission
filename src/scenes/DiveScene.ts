@@ -27,7 +27,10 @@ import {
   ensureNormalizedTextureSequence,
 } from '../graphics/TextureFactory';
 import { saveService } from '../services/SaveService';
-import { experiencePreferences } from '../state/ExperiencePreferences';
+import {
+  narrationService,
+  type NarrationCueId,
+} from '../services/NarrationService';
 import {
   currentPhotoKeyForStation,
   getCreatureFramePlan,
@@ -141,8 +144,6 @@ export class DiveScene extends Phaser.Scene {
   private lessonOverlayTimers: Phaser.Time.TimerEvent[] = [];
   private foodWebPuzzle: FoodWebPuzzle | null = null;
   private doBridgeNarrationPlayed = false;
-  private doBridgeNarrationCompleted = false;
-  private activeDoBridgeUtterance: SpeechSynthesisUtterance | null = null;
 
   private readonly onDepleted = (payload: GameEventMap['oxygen:depleted']): void => {
     if (this.viewfinderOpen) this.closeViewfinder();
@@ -210,8 +211,19 @@ export class DiveScene extends Phaser.Scene {
     this.observedSpecies.clear();
     this.pendingObservationReview = null;
     this.doBridgeNarrationPlayed = false;
-    this.doBridgeNarrationCompleted = false;
-    this.activeDoBridgeUtterance = null;
+    narrationService.preload([
+      'report-today-gallery',
+      'report-compare-1',
+      'report-compare-2',
+      'report-do-question',
+      'report-do-bridge',
+      'report-recap-1',
+      'report-recap-2',
+      'report-recap-3',
+      'report-recap-4',
+      'feedback-correct',
+      'feedback-try-again',
+    ]);
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Dive });
     this.atmosphere = new Atmosphere(this, { showSurface: true });
     this.bounds = new Phaser.Geom.Rectangle(
@@ -1462,6 +1474,13 @@ export class DiveScene extends Phaser.Scene {
       });
 
       if (page === 0) {
+        const narrationHighlight = add(
+          this.add
+            .rectangle(GAME_WIDTH / 2, 670, 1280, 142, 0xf0c95a, 0.035)
+            .setStrokeStyle(4, Palette.gold, 0.88)
+            .setDepth(4103)
+            .setVisible(false),
+        );
         add(
           this.add
             .text(
@@ -1519,6 +1538,28 @@ export class DiveScene extends Phaser.Scene {
         );
         galleryContinue = next;
         add(next.root);
+        const voiceButton = new ResearchButton(
+          this,
+          1510,
+          970,
+          310,
+          64,
+          i18n.t('report.aiVoiceReplay'),
+          { tone: 'secondary', fontSize: 20, depth: 4105 },
+        );
+        add(voiceButton.root);
+        const playGalleryNarration = (automatic = false): void => {
+          voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+          const accepted = this.playNarrationCue('report-today-gallery', narrationHighlight, {
+            automatic,
+            hideHighlightWhenIdle: true,
+            onComplete: () =>
+              voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+            onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+          });
+          if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+        };
+        voiceButton.onPress(() => playGalleryNarration(false));
         next.onPress(() => {
           if (viewedStations.size < 3) {
             galleryProgress?.setText(i18n.t('report.todayGalleryNeedAll')).setColor('#ffcf78');
@@ -1528,8 +1569,17 @@ export class DiveScene extends Phaser.Scene {
           render();
         });
         refreshGalleryGate();
+        playGalleryNarration(true);
       } else {
         const current = questions[page - 1] ?? questions[0];
+        const questionCue: NarrationCueId = page === 1 ? 'report-compare-1' : 'report-compare-2';
+        const narrationHighlight = add(
+          this.add
+            .rectangle(GAME_WIDTH / 2, 770, 1320, 270, 0xf0c95a, 0.025)
+            .setStrokeStyle(4, Palette.gold, 0.82)
+            .setDepth(4103)
+            .setVisible(false),
+        );
         add(
           this.add
             .text(
@@ -1569,6 +1619,28 @@ export class DiveScene extends Phaser.Scene {
             .setOrigin(0.5)
             .setDepth(4105),
         );
+        const voiceButton = new ResearchButton(
+          this,
+          1510,
+          970,
+          310,
+          64,
+          i18n.t('report.aiVoiceReplay'),
+          { tone: 'secondary', fontSize: 20, depth: 4105 },
+        );
+        add(voiceButton.root);
+        const playQuestionNarration = (automatic = false): void => {
+          voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+          const accepted = this.playNarrationCue(questionCue, narrationHighlight, {
+            automatic,
+            hideHighlightWhenIdle: true,
+            onComplete: () =>
+              voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+            onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+          });
+          if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+        };
+        voiceButton.onPress(() => playQuestionNarration(false));
         current.choices.forEach((choice, choiceIndex) => {
           const button = new ResearchButton(
             this,
@@ -1584,8 +1656,13 @@ export class DiveScene extends Phaser.Scene {
             const correct = choiceIndex === current.correct;
             button.setTone(correct ? 'primary' : 'danger');
             feedback.setText(i18n.t(correct ? 'report.compareCorrect' : 'report.compareTryAgain'));
+            this.playNarrationCue(
+              correct ? 'feedback-correct' : 'feedback-try-again',
+              button.root,
+              { hideHighlightWhenIdle: false },
+            );
             if (!correct) return;
-            this.time.delayedCall(520, () => {
+            this.time.delayedCall(760, () => {
               if (page >= questions.length) this.showFoodChainLesson();
               else {
                 page += 1;
@@ -1594,6 +1671,7 @@ export class DiveScene extends Phaser.Scene {
             });
           });
         });
+        playQuestionNarration(true);
       }
       this.lessonOverlayObjects = objects;
       this.sharpenVisibleText();
@@ -2225,6 +2303,7 @@ export class DiveScene extends Phaser.Scene {
 
     const render = (): void => {
       transitioning = false;
+      narrationService.stop();
       for (const object of pageObjects) object.destroy();
       pageObjects = [];
       const add = <T extends Phaser.GameObjects.GameObject>(object: T): T => {
@@ -2233,6 +2312,13 @@ export class DiveScene extends Phaser.Scene {
       };
       const current = questions[index] ?? questions[0];
       if (current === undefined) return;
+      const questionCue = [
+        'report-recap-1',
+        'report-recap-2',
+        'report-recap-3',
+        'report-recap-4',
+      ] as const;
+      const activeQuestionCue = questionCue[index] ?? 'report-recap-1';
       add(
         this.add
           .rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x02060c, 0.82)
@@ -2245,6 +2331,13 @@ export class DiveScene extends Phaser.Scene {
           .rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 1480, 720, 0x0a2a43, 0.99)
           .setStrokeStyle(3, Palette.accent)
           .setDepth(3001),
+      );
+      const narrationHighlight = add(
+        this.add
+          .rectangle(GAME_WIDTH / 2, 500, 1390, 360, 0xf0c95a, 0.02)
+          .setStrokeStyle(4, Palette.gold, 0.82)
+          .setDepth(3001.5)
+          .setVisible(false),
       );
       add(
         this.add
@@ -2318,6 +2411,28 @@ export class DiveScene extends Phaser.Scene {
         this.enterChapter2();
       });
       add(continueButton.root);
+      const voiceButton = new ResearchButton(
+        this,
+        820,
+        810,
+        330,
+        66,
+        i18n.t('report.aiVoiceReplay'),
+        { tone: 'secondary', fontSize: 20, depth: 3004 },
+      );
+      add(voiceButton.root);
+      const playQuestionNarration = (automatic = false): void => {
+        voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+        const accepted = this.playNarrationCue(activeQuestionCue, narrationHighlight, {
+          automatic,
+          hideHighlightWhenIdle: true,
+          onComplete: () =>
+            voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+          onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+        });
+        if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+      };
+      voiceButton.onPress(() => playQuestionNarration(false));
       const choiceButtons: ResearchButton[] = [];
       current.choices.forEach((choice, choiceIndex) => {
         const button = new ResearchButton(
@@ -2345,6 +2460,11 @@ export class DiveScene extends Phaser.Scene {
             .setColor(correct ? '#d8fffb' : '#fff3b0')
             .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
             .setText(i18n.t(feedbackKey));
+          this.playNarrationCue(
+            correct ? 'feedback-correct' : 'feedback-try-again',
+            button.root,
+            { hideHighlightWhenIdle: false },
+          );
           if (!correct) {
             this.tweens.add({
               targets: button.root,
@@ -2364,7 +2484,7 @@ export class DiveScene extends Phaser.Scene {
             continueButton.root.setVisible(true).setActive(true);
             return;
           }
-          this.time.delayedCall(650, () => {
+          this.time.delayedCall(760, () => {
             index += 1;
             render();
           });
@@ -2392,6 +2512,7 @@ export class DiveScene extends Phaser.Scene {
         }
       });
       this.lessonOverlayObjects = pageObjects;
+      playQuestionNarration(true);
       this.sharpenVisibleText();
     };
     render();
@@ -2496,6 +2617,13 @@ export class DiveScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(3004),
     );
+    const narrationHighlight = add(
+      this.add
+        .rectangle(GAME_WIDTH / 2, 700, 1100, 220, 0xf0c95a, 0.025)
+        .setStrokeStyle(4, Palette.gold, 0.82)
+        .setDepth(3003)
+        .setVisible(false),
+    );
     add(
       this.add
         .text(
@@ -2543,7 +2671,12 @@ export class DiveScene extends Phaser.Scene {
         feedback.setText(
           i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
         );
-        if (choice.correct) this.time.delayedCall(620, () => this.showDoBridge());
+        this.playNarrationCue(
+          choice.correct ? 'feedback-correct' : 'feedback-try-again',
+          button.root,
+          { hideHighlightWhenIdle: false },
+        );
+        if (choice.correct) this.time.delayedCall(760, () => this.showDoBridge());
       });
     });
     const back = new ResearchButton(this, 470, 850, 260, 64, i18n.t('common.backStep'), {
@@ -2557,7 +2690,29 @@ export class DiveScene extends Phaser.Scene {
       this.setReportOverlayVisible(true);
       this.sharpenVisibleText();
     });
+    const voiceButton = new ResearchButton(
+      this,
+      1360,
+      850,
+      340,
+      64,
+      i18n.t('report.aiVoiceReplay'),
+      { tone: 'secondary', fontSize: 20, depth: 3004 },
+    );
+    add(voiceButton.root);
+    const playQuestionNarration = (automatic = false): void => {
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+      const accepted = this.playNarrationCue('report-do-question', narrationHighlight, {
+        automatic,
+        hideHighlightWhenIdle: true,
+        onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+        onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+      });
+      if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+    };
+    voiceButton.onPress(() => playQuestionNarration(false));
     this.lessonOverlayObjects = objects;
+    playQuestionNarration(true);
     this.sharpenVisibleText();
   }
 
@@ -2654,39 +2809,49 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3002);
+    const narrationHighlight = this.add
+      .rectangle(GAME_WIDTH / 2, 495, 1180, 500, 0xf0c95a, 0.015)
+      .setStrokeStyle(4, Palette.gold, 0.9)
+      .setDepth(3001.5)
+      .setVisible(false);
     const button = new ResearchButton(
       this,
-      GAME_WIDTH / 2,
+      1280,
       825,
-      430,
-      72,
+      360,
+      64,
       i18n.t('report.startRecap'),
-      { tone: 'primary', fontSize: 27, depth: 3002 },
+      { tone: 'primary', fontSize: 24, depth: 3003 },
     );
-    button.setEnabled(this.doBridgeNarrationCompleted);
-    if (!this.doBridgeNarrationCompleted) button.setText(i18n.t('report.doBridgeListenFirst'));
     button.onPress(() => this.showChapter1Recap());
-    const playRequiredNarration = (): void => {
-      button.setText(i18n.t('report.doBridgeListenFirst')).setEnabled(false);
-      const started = this.speakDoBridgeExplanation(
-        () => {
-          this.doBridgeNarrationCompleted = true;
-          button.setText(i18n.t('report.startRecap')).setEnabled(true);
+    const voiceButton = new ResearchButton(
+      this,
+      860,
+      825,
+      300,
+      64,
+      i18n.t('report.doBridgeVoiceReplay'),
+      { tone: 'secondary', fontSize: 22, depth: 3003 },
+    );
+    const playRequiredNarration = (automatic = false): void => {
+      if (narrationService.isPlaying()) return;
+      voiceButton.setText(i18n.t('report.doBridgeVoicePlaying')).setEnabled(false);
+      const started = this.playNarrationCue('report-do-bridge', narrationHighlight, {
+        automatic,
+        hideHighlightWhenIdle: true,
+        onComplete: () => {
+          voiceButton.setText(i18n.t('report.doBridgeVoiceReplay')).setEnabled(true);
         },
-        () => button.setText(i18n.t('report.doBridgeVoiceRetry')).setEnabled(false),
-      );
-      // Avoid trapping a learner on devices with no speech-synthesis API.
+        onError: () => {
+          voiceButton.setText(i18n.t('report.doBridgeVoiceRetry')).setEnabled(true);
+        },
+      });
       if (!started) {
-        this.doBridgeNarrationCompleted = true;
-        button.setText(i18n.t('report.startRecap')).setEnabled(true);
+        voiceButton.setText(i18n.t('report.doBridgeVoiceUnavailable')).setEnabled(true);
       }
     };
-    dim.on(Phaser.Input.Events.POINTER_UP, () => {
-      if (!this.doBridgeNarrationCompleted && this.activeDoBridgeUtterance === null) {
-        playRequiredNarration();
-      }
-    });
-    const back = new ResearchButton(this, 470, 825, 260, 64, i18n.t('common.backStep'), {
+    voiceButton.onPress(() => playRequiredNarration(false));
+    const back = new ResearchButton(this, 440, 825, 250, 64, i18n.t('common.backStep'), {
       tone: 'secondary',
       fontSize: 22,
       depth: 3003,
@@ -2700,72 +2865,16 @@ export class DiveScene extends Phaser.Scene {
       ...conceptCards,
       problem,
       solution,
+      narrationHighlight,
       button.root,
+      voiceButton.root,
       back.root,
     ];
     if (!this.doBridgeNarrationPlayed) {
       this.doBridgeNarrationPlayed = true;
-      playRequiredNarration();
+      playRequiredNarration(true);
     }
     this.sharpenVisibleText();
-  }
-
-  private speakDoBridgeExplanation(onComplete?: () => void, onError?: () => void): boolean {
-    const scripts = {
-      can: {
-        lang: 'zh-HK',
-        text: 'DO 就係溶解氧，即係溶喺水入面、俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。',
-      },
-      pth: {
-        lang: 'zh-CN',
-        text: 'DO 就是溶解氧，也就是溶在水里、供鱼和其他水中生物呼吸的氧气。一次读数可能错过清晨低氧，所以要在不同位置、不同深度连续监测。',
-      },
-      eng: {
-        lang: 'en-US',
-        text: 'DO means dissolved oxygen: oxygen in water that fish and other aquatic life can breathe. One reading may miss low oxygen before dawn, so we monitor continuously at different locations and depths.',
-      },
-    } as const;
-    const script = scripts[experiencePreferences.getVoice()];
-    if (
-      typeof window === 'undefined' ||
-      window.speechSynthesis === undefined ||
-      typeof SpeechSynthesisUtterance === 'undefined'
-    ) {
-      return false;
-    }
-
-    const synthesizer = window.speechSynthesis;
-    this.activeDoBridgeUtterance = null;
-    synthesizer.cancel();
-    synthesizer.resume();
-    const utterance = new SpeechSynthesisUtterance(script.text);
-    this.activeDoBridgeUtterance = utterance;
-    utterance.lang = script.lang;
-    utterance.rate = 0.88;
-    utterance.pitch = 1;
-    const languageRoot = script.lang.toLowerCase().split('-')[0] ?? script.lang.toLowerCase();
-    const matchingVoice =
-      window.speechSynthesis
-        .getVoices()
-        .find((voice) => voice.lang.toLowerCase().startsWith(script.lang.toLowerCase())) ??
-      window.speechSynthesis
-        .getVoices()
-        .find((voice) => voice.lang.toLowerCase().startsWith(languageRoot));
-    if (matchingVoice !== undefined) utterance.voice = matchingVoice;
-    utterance.onend = () => {
-      if (this.activeDoBridgeUtterance !== utterance) return;
-      this.activeDoBridgeUtterance = null;
-      onComplete?.();
-    };
-    utterance.onerror = () => {
-      if (this.activeDoBridgeUtterance !== utterance) return;
-      this.activeDoBridgeUtterance = null;
-      onError?.();
-    };
-    // Keep the utterance strongly referenced until onend. Some WebKit builds
-    // otherwise stop longer Chinese speech partway through.
-    synthesizer.speak(utterance);
-    return true;
   }
 
   private enterChapter2(): void {
@@ -4455,6 +4564,52 @@ export class DiveScene extends Phaser.Scene {
     });
   }
 
+  private playNarrationCue(
+    cue: NarrationCueId,
+    highlightTarget: Phaser.GameObjects.GameObject,
+    options: {
+      readonly automatic?: boolean;
+      readonly hideHighlightWhenIdle?: boolean;
+      readonly onComplete?: () => void;
+      readonly onError?: () => void;
+    } = {},
+  ): boolean {
+    const target = highlightTarget as Phaser.GameObjects.GameObject & {
+      setAlpha(value: number): Phaser.GameObjects.GameObject;
+      setVisible(value: boolean): Phaser.GameObjects.GameObject;
+    };
+    const stopPulse = (): void => {
+      this.tweens.killTweensOf(target);
+      target.setAlpha(1);
+      if (options.hideHighlightWhenIdle === true) target.setVisible(false);
+    };
+    const accepted = narrationService.play(cue, {
+      automatic: options.automatic,
+      onStart: () => {
+        target.setVisible(true);
+        target.setAlpha(0.42);
+        this.tweens.add({
+          targets: target,
+          alpha: { from: 0.42, to: 1 },
+          duration: 560,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.InOut',
+        });
+      },
+      onComplete: () => {
+        stopPulse();
+        options.onComplete?.();
+      },
+      onError: () => {
+        stopPulse();
+        options.onError?.();
+      },
+    });
+    if (!accepted) stopPulse();
+    return accepted;
+  }
+
   private destroyOverlay(): void {
     this.destroyLessonOverlay();
     this.foodWebPuzzle?.destroy();
@@ -4466,10 +4621,7 @@ export class DiveScene extends Phaser.Scene {
   private destroyLessonOverlay(): void {
     for (const timer of this.lessonOverlayTimers) timer.remove(false);
     this.lessonOverlayTimers = [];
-    if (this.activeDoBridgeUtterance !== null && typeof window !== 'undefined') {
-      this.activeDoBridgeUtterance = null;
-      window.speechSynthesis?.cancel();
-    }
+    narrationService.stop();
     for (const object of this.lessonOverlayObjects) {
       this.tweens.killTweensOf(object);
       object.destroy();
@@ -4504,8 +4656,7 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
-    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-    this.activeDoBridgeUtterance = null;
+    narrationService.stop();
     eventBus.off('oxygen:depleted', this.onDepleted);
     eventBus.off('station:discovered', this.onStationDiscovered);
     eventBus.off('subject:discovered', this.onSubjectDiscovered);

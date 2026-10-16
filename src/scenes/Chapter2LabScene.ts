@@ -2512,7 +2512,23 @@ export class Chapter2LabScene extends Phaser.Scene {
     );
 
     const hasNextToolTrial = snapshot !== null && !snapshot.success && this.deploymentToolRound < 2;
-    this.addModalButton(
+    let nextToolHighlight: Phaser.GameObjects.Rectangle | null = null;
+    if (hasNextToolTrial) {
+      nextToolHighlight = this.add
+        .rectangle(500, 930, 422, 82, 0xf0c95a, 0.035)
+        .setStrokeStyle(4, Palette.gold, 0.95);
+      root.add(nextToolHighlight);
+      this.tweens.add({
+        targets: nextToolHighlight,
+        alpha: { from: 0.28, to: 1 },
+        scale: { from: 0.98, to: 1.035 },
+        duration: 540,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.InOut',
+      });
+    }
+    const resultActionButton = this.addModalButton(
       root,
       500,
       930,
@@ -2531,6 +2547,10 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.showDeploymentModal();
       },
     );
+    if (hasNextToolTrial) root.bringToTop(resultActionButton);
+    root.once('destroy', () => {
+      if (nextToolHighlight !== null) this.tweens.killTweensOf(nextToolHighlight);
+    });
 
     if (snapshot === null) {
       const emptySurface = createResearchSurface(this, 960, 585, 1120, 360, {

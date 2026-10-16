@@ -51,7 +51,7 @@ describe('Chapter 2 experiment guidance and product reveal', () => {
   });
 
   it('uses a balanced two-column unlock layout with a large product view', () => {
-    expect(unlock).toContain('1640,\n      920,');
+    expect(unlock).toMatch(/1640,\s+920,/);
     expect(unlock).toContain('createResearchSurface(this, 500, 585, 560, 430');
     expect(unlock).toContain(".image(500, 560, 'chapter2-do-sensor-product')");
     expect(unlock).toContain('.setDisplaySize(470, 313)');

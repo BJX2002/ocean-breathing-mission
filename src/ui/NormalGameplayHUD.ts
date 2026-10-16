@@ -10,6 +10,8 @@ const PANEL_LEFT = SAFE_MARGIN;
 const PANEL_TOP = 28;
 const PANEL_WIDTH = 760;
 const PANEL_HEIGHT = 202;
+const DESKTOP_NOTIFICATION_X = GAME_WIDTH / 2 + 70;
+const TOUCH_NOTIFICATION_X = 1260;
 
 export interface NormalGameplayHUDState {
   readonly completedTaskCount: number;
@@ -140,14 +142,14 @@ export class NormalGameplayHUD {
     this.oxygen = new OxygenGauge(scene, SAFE_MARGIN, 998, false);
 
     this.notificationBackground = scene.add
-      .rectangle(GAME_WIDTH / 2 + 70, 82, 760, 86, PANEL_FILL, 0.94)
+      .rectangle(DESKTOP_NOTIFICATION_X, 82, 760, 86, PANEL_FILL, 0.94)
       .setStrokeStyle(2, 0xf2c75c, 0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH + 8)
       .setVisible(false)
       .setAlpha(0);
     this.notificationText = scene.add
-      .text(GAME_WIDTH / 2 + 70, 82, '', {
+      .text(DESKTOP_NOTIFICATION_X, 82, '', {
         ...this.textStyle(21, Palette.textLight, true),
         align: 'center',
         wordWrap: { width: 700, useAdvancedWrap: true },
@@ -200,6 +202,9 @@ export class NormalGameplayHUD {
     );
     this.actionEnglish.setText('');
     this.actionLabel.setText(state.actionLabel);
+    const notificationX = state.touchControls ? TOUCH_NOTIFICATION_X : DESKTOP_NOTIFICATION_X;
+    this.notificationBackground.setX(notificationX);
+    this.notificationText.setX(notificationX);
     const targetVisible = this.updateTargetCard(
       state.targetTextureKey ?? null,
       state.targetLabel ?? null,
