@@ -91,14 +91,12 @@ describe('teaching-flow copy', () => {
 
     expect(bridge).toContain("i18n.t('report.doBridgeVoiceReplay')");
     expect(bridge).toContain('if (!this.doBridgeNarrationPlayed)');
-    expect(bridge).toContain('experiencePreferences.getVoice()');
-    expect(bridge).toContain('this.activeDoBridgeUtterance = utterance;');
-    expect(bridge).toContain('synthesizer.speak(utterance);');
+    expect(bridge).toContain("this.playNarrationCue('report-do-bridge'");
+    expect(bridge).toContain('narrationService.isPlaying()');
+    expect(bridge).toContain('playRequiredNarration(true);');
     expect(bridge).not.toContain('button.setEnabled(this.doBridgeNarrationCompleted);');
-    expect(bridge).toContain('voiceButton.onPress(playRequiredNarration);');
-    expect(bridge).toContain('Never replace Cantonese with an arbitrary zh-* voice');
-    expect(bridge).not.toContain("split('-')[0]");
-    expect(bridge).toContain('utterance.rate = 1;');
+    expect(bridge).toContain('voiceButton.onPress(() => playRequiredNarration(false));');
+    expect(bridge).not.toContain('SpeechSynthesisUtterance');
   });
 
   it('makes the historical-photo hotspot action explicit', () => {

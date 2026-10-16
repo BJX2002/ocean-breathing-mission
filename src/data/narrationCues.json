@@ -1,0 +1,57 @@
+{
+  "report-today-gallery": {
+    "can": "步驟：逐張查看三個固定觀測點今日嘅相。提示：點按任何一張相，可以切換歷史同今日；先描述見到嘅變化，唔好急住估原因。",
+    "pth": "步骤：逐张查看三个固定观测点今天的照片。提示：点按任一照片可以切换历史和今天；先只描述看见的变化，不要急着猜原因。",
+    "eng": "Step: Inspect today's photo from each of the three fixed survey stations. Tip: Tap any photo to switch between the historical and today's view. First describe what you can see; do not guess the cause yet."
+  },
+  "report-compare-1": {
+    "can": "問題：三個地點都出現咗乜嘢變化？A，今日畫面入面見到嘅海洋生物比較少。B，睇落完全一樣。",
+    "pth": "问题：三个地点都出现了什么变化？A，今天画面中可见的海洋生物较少。B，看起来完全一样。",
+    "eng": "Question: What change appears across all three views? A: Fewer marine organisms are visible today. B: Everything looks the same."
+  },
+  "report-compare-2": {
+    "can": "問題：比較一次，就可以直接證明變化嘅原因嗎？A，唔可以，呢個只係線索，仲要收集更多證據。B，可以，一張相已經證明到原因。",
+    "pth": "问题：一次比较能直接证明变化的原因吗？A，不能，这只是线索，还要收集更多证据。B，可以，一张照片已经能证明原因。",
+    "eng": "Question: Does one comparison prove why the scene changed? A: No. It is a clue, and we need more evidence. B: Yes. One photo proves the cause."
+  },
+  "report-do-question": {
+    "can": "問題：魚靠身體邊個部位，喺水入面取得氧氣？A，魚鰓。B，魚鱗。",
+    "pth": "问题：鱼靠身体的哪个部位从水中取得氧气？A，鱼鳃。B，鱼鳞。",
+    "eng": "Question: Which body part do fish use to take oxygen from water? A: Gills. B: Scales."
+  },
+  "report-do-bridge": {
+    "can": "D O 就係溶解氧，即係溶喺水入面，俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。",
+    "pth": "D O 就是溶解氧，也就是溶在水里，供鱼和其他水中生物呼吸的氧气。一次读数可能错过清晨低氧，所以要在不同位置、不同深度连续监测。",
+    "eng": "D O means dissolved oxygen: oxygen in water that fish and other aquatic life can breathe. One reading may miss low oxygen before dawn, so we monitor continuously at different locations and depths."
+  },
+  "report-recap-1": {
+    "can": "問題一：淨係下晝量一次 D O，可唔可以知道清晨有冇出現低氧？A，可以，一次數字已經足夠。B，唔可以，需要連續記錄唔同時間。",
+    "pth": "问题一：只在下午测量一次 D O，能知道清晨有没有发生低氧吗？A，可以，一次数字已经足够。B，不可以，需要连续记录不同时间。",
+    "eng": "Question one: Can one afternoon D O reading tell us whether low oxygen occurred before dawn? A: Yes, one number is enough. B: No, we need measurements over time."
+  },
+  "report-recap-2": {
+    "can": "問題二：表層 D O 正常，係咪代表近海床一定都正常？A，係，同一片海嘅數字都一樣。B，唔一定，需要量度唔同深度。",
+    "pth": "问题二：表层 D O 正常，是否代表近海床一定也正常？A，是，同一片海的数字都一样。B，不一定，需要测量不同深度。",
+    "eng": "Question two: If surface D O is normal, must near-bed D O also be normal? A: Yes, all depths are the same. B: Not necessarily; measure multiple depths."
+  },
+  "report-recap-3": {
+    "can": "問題三：今日見到嘅海洋生物比舊相少，可唔可以直接證明低氧係唯一原因？A，唔可以，相片只顯示生物少咗，唔可以證明唯一原因。B，可以，生物少咗一定只係低氧造成。",
+    "pth": "问题三：今天的海洋生物比旧照片少，能直接证明低氧是唯一原因吗？A，不能，照片只能显示生物变少，不能证明唯一原因。B，能，生物变少一定只由低氧造成。",
+    "eng": "Question three: Fewer marine organisms are visible today. Does that prove low oxygen is the only cause? A: No. The photo shows fewer organisms but cannot prove one cause. B: Yes. Fewer organisms can only mean low oxygen."
+  },
+  "report-recap-4": {
+    "can": "問題四：如果小型魚明顯減少，食物網入面其他生物可能有咩變化？A，依賴佢哋嘅大型礁魚同其他生物都可能減少。B，只會影響小型魚，其他生物唔會改變。",
+    "pth": "问题四：如果小型鱼明显减少，食物网中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
+    "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food web? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
+  },
+  "feedback-correct": {
+    "can": "答啱喇。",
+    "pth": "答对了。",
+    "eng": "Correct."
+  },
+  "feedback-try-again": {
+    "can": "未啱，再試一次。",
+    "pth": "还不对，再试一次。",
+    "eng": "Not yet. Try once more."
+  }
+}
