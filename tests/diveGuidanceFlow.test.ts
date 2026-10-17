@@ -11,15 +11,17 @@ function section(source: string, start: string, end: string): string {
 describe('Chapter 1 guidance flow', () => {
   const source = readFileSync(`${process.cwd()}/src/scenes/DiveScene.ts`, 'utf8');
 
-  it('introduces only the first field action in the mission briefing', () => {
+  it('keeps only the concise white first-action copy in the mission briefing', () => {
     const briefing = section(
       source,
       'private showMissionBriefing(): void',
       'private updateAutomaticSurveyUnit(',
     );
 
-    expect(briefing).toContain("i18n.t('dive.missionBriefFirstStep')");
+    expect(briefing).toContain("i18n.t('dive.missionBriefBody')");
     expect(briefing).toContain("i18n.t('dive.missionBriefProgress')");
+    expect(briefing).toContain("this.playNarrationCue('dive-mission-brief'");
+    expect(briefing).not.toContain("i18n.t('dive.missionBriefFirstStep')");
     expect(briefing).not.toContain("'dive.missionBriefSpecies'");
     expect(briefing).not.toContain("'dive.missionBriefDevice'");
     expect(briefing).not.toContain("'dive.missionBriefReturn'");

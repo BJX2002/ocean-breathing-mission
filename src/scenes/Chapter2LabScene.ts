@@ -1,14 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH, Palette, SceneKeys } from '../config/constants';
 import { eventBus } from '../events/EventBus';
-import {
-  CHAPTER2_ART_MANIFEST,
-  CHAPTER2_SCIENTIST_FRAME_KEYS,
-} from '../graphics/assetManifest';
+import { CHAPTER2_ART_MANIFEST, CHAPTER2_SCIENTIST_FRAME_KEYS } from '../graphics/assetManifest';
 import { queueSceneArt } from '../graphics/SceneArtLoader';
 import { i18n } from '../i18n/LocaleService';
 import { inputPrompt } from '../input/ControlScheme';
-import { experiencePreferences } from '../state/ExperiencePreferences';
+import { narrationService, type NarrationCueId } from '../services/NarrationService';
 import { gameState } from '../state/GameState';
 import type { DepthZone, Sensor } from '../types';
 import {
@@ -76,7 +73,6 @@ export class Chapter2LabScene extends Phaser.Scene {
   private deploymentRepairSpend = 0;
   private monitoringComparisonComplete = false;
   private deploymentToolRound = 0;
-  private activeNarrationUtterance: SpeechSynthesisUtterance | null = null;
 
   constructor() {
     super(SceneKeys.Chapter2Lab);
@@ -101,7 +97,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.deploymentRunComplete = false;
     this.deploymentRunSnapshot = null;
     this.deploymentRepairSpend = 0;
-    this.activeNarrationUtterance = null;
+    narrationService.resetAutomaticStarts();
     this.zones.length = 0;
     this.progressDots.length = 0;
     this.deploymentPlacements.clear();
@@ -110,6 +106,16 @@ export class Chapter2LabScene extends Phaser.Scene {
 
   preload(): void {
     queueSceneArt(this, CHAPTER2_ART_MANIFEST);
+    narrationService.preload([
+      'lab-compare-manual',
+      'lab-compare-fixed',
+      'lab-compare-sensor',
+      'lab-deployment-guide',
+      'lab-summary-1',
+      'lab-summary-2',
+      'lab-summary-3',
+      'lab-ending',
+    ]);
   }
 
   create(): void {
@@ -120,8 +126,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     }
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Chapter2Lab });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-      this.activeNarrationUtterance = null;
+      narrationService.stop();
     });
     this.createLabBackground();
     this.createHeader();
@@ -1304,9 +1309,8 @@ export class Chapter2LabScene extends Phaser.Scene {
 
   private showUnlockModal(): void {
     // This is a quiet visual reference screen. Stop any explanation left from
-    // the hands-on experiment instead of carrying speech into the unlock card.
-    if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-    this.activeNarrationUtterance = null;
+    // the hands-on experiment instead of carrying narration into the unlock card.
+    narrationService.stop();
     const root = this.createModal(
       i18n.t('lab.unlockEyebrow'),
       i18n.t('lab.unlockTitle'),
@@ -1590,7 +1594,8 @@ export class Chapter2LabScene extends Phaser.Scene {
       .setOrigin(0.5);
     const narrationHighlight = this.add
       .rectangle(470, 590, 438, 378, 0xf0c95a, 0.025)
-      .setStrokeStyle(4, Palette.gold, 0.95);
+      .setStrokeStyle(4, Palette.gold, 0.95)
+      .setVisible(false);
     root.add([narrationStatus, narrationHighlight]);
 
     this.addModalButton(root, 470, 875, 260, i18n.t('common.backStep'), false, () =>
@@ -1613,25 +1618,11 @@ export class Chapter2LabScene extends Phaser.Scene {
       },
     ).setVisible(false);
 
-    const narrationScripts = {
-      can: [
-        '船隻採樣一次可以調查同一地點三個深度，但每層只留低一個時刻嘅讀數，而且價錢最貴。',
-        '傳統固定探頭可以連續記錄一個點，但生物附著會令佢斷線，維修仲要用額外預算。',
-        '新一代溶解氧傳感器可以組成多點連續監測網，紫外光有助抑制附著，而且薄膜可以更換。',
-      ],
-      pth: [
-        '船只采样一次可以调查同一个地点的三个深度，但每层只留下一个时刻的读数，而且价格最贵。',
-        '传统固定探头可以连续记录一个点，但生物附着会让它断线，维修还要使用额外预算。',
-        '新一代溶解氧传感器可以组成多点连续监测网，紫外光有助于抑制附着，而且薄膜可以更换。',
-      ],
-      eng: [
-        'A vessel visit samples three depths at one location, but each depth gets only one moment, and this is the most expensive method.',
-        'A conventional fixed probe records one point continuously, but biofouling can break its link and repairs use more budget.',
-        'Next-generation dissolved oxygen sensors form a continuous multi-point network. Ultraviolet light helps suppress fouling, and the film is replaceable.',
-      ],
-    } as const;
-    const voiceLanguage = { can: 'zh-HK', pth: 'zh-CN', eng: 'en-US' } as const;
-    let narrationFallback: Phaser.Time.TimerEvent | null = null;
+    const narrationCues: readonly NarrationCueId[] = [
+      'lab-compare-manual',
+      'lab-compare-fixed',
+      'lab-compare-sensor',
+    ];
     const runNarration = (index: number): void => {
       if (this.modalRoot !== root) return;
       if (index >= methodDefinitions.length) {
@@ -1645,14 +1636,10 @@ export class Chapter2LabScene extends Phaser.Scene {
       methodViews.forEach((view, viewIndex) => {
         view.setAlpha(viewIndex === index ? 1 : 0.42);
       });
-      narrationHighlight.setPosition(methodDefinitions[index]?.x ?? 470, 590).setVisible(true);
-      this.tweens.add({
-        targets: narrationHighlight,
-        alpha: { from: 0.32, to: 1 },
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-      });
+      narrationHighlight
+        .setPosition(methodDefinitions[index]?.x ?? 470, 590)
+        .setVisible(false)
+        .setAlpha(1);
       narrationStatus
         .setText(i18n.t(methodDefinitions[index]?.narrationKey ?? 'lab.compareManualNarration'))
         .setColor('#fff3a8');
@@ -1661,46 +1648,40 @@ export class Chapter2LabScene extends Phaser.Scene {
       const finish = (): void => {
         if (finished) return;
         finished = true;
-        this.activeNarrationUtterance = null;
-        narrationFallback?.remove(false);
-        narrationFallback = null;
         this.tweens.killTweensOf(narrationHighlight);
+        narrationHighlight.setVisible(false).setAlpha(1);
         runNarration(index + 1);
       };
-      const speechAvailable = !(
-        typeof window === 'undefined' ||
-        window.speechSynthesis === undefined ||
-        typeof SpeechSynthesisUtterance === 'undefined'
-      );
-      if (!speechAvailable) {
-        // Keep the visual teaching sequence usable in browsers without speech,
-        // but never use a timer while real narration is playing: doing so cut
-        // longer sentences short when the next utterance cancelled the first.
-        narrationFallback = this.time.delayedCall(5200, finish);
+      const cue = narrationCues[index];
+      if (cue === undefined) {
+        finish();
         return;
       }
-      const voice = experiencePreferences.getVoice();
-      const utterance = new SpeechSynthesisUtterance(narrationScripts[voice][index] ?? '');
-      this.activeNarrationUtterance = utterance;
-      utterance.lang = voiceLanguage[voice];
-      utterance.rate = 0.9;
-      utterance.onend = () => {
-        if (this.activeNarrationUtterance === utterance) finish();
-      };
-      utterance.onerror = () => {
-        if (this.activeNarrationUtterance === utterance) finish();
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utterance);
+      const accepted = narrationService.play(cue, {
+        onStart: () => {
+          narrationHighlight.setVisible(true).setAlpha(0.32);
+          this.tweens.add({
+            targets: narrationHighlight,
+            alpha: { from: 0.32, to: 1 },
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+          });
+        },
+        onComplete: finish,
+        onError: finish,
+        onStop: () => {
+          this.tweens.killTweensOf(narrationHighlight);
+          narrationHighlight.setVisible(false).setAlpha(1);
+        },
+      });
+      if (!accepted) finish();
     };
     const narrationStart = this.time.delayedCall(320, () => runNarration(0));
     root.once('destroy', () => {
       narrationStart.remove(false);
-      narrationFallback?.remove(false);
       this.tweens.killTweensOf(narrationHighlight);
-      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-      this.activeNarrationUtterance = null;
+      narrationService.stop();
     });
   }
 
@@ -1897,29 +1878,24 @@ export class Chapter2LabScene extends Phaser.Scene {
       this.tweens.killTweensOf(target);
       target.setVisible(false).setScale(1).setAlpha(1);
     };
-    const pulseText = (target: Phaser.GameObjects.Text): void => {
-      target.setAlpha(1);
-      this.tweens.killTweensOf(target);
-      this.tweens.add({
-        targets: target,
-        alpha: { from: 0.38, to: 1 },
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.InOut',
-      });
-    };
-    pulseGuide(goalGuide);
-    pulseGuide(equipmentGuide);
-    pulseText(equipmentTitle);
-    pulseText(goalsTitle);
-    const introGuideTimer = this.time.delayedCall(6000, () => {
+    const stopIntroGuides = (): void => {
       stopGuide(goalGuide);
       stopGuide(equipmentGuide);
-      this.tweens.killTweensOf(equipmentTitle);
-      this.tweens.killTweensOf(goalsTitle);
       equipmentTitle.setAlpha(1);
       goalsTitle.setAlpha(1);
+    };
+    const narrationStart = this.time.delayedCall(320, () => {
+      const accepted = narrationService.play('lab-deployment-guide', {
+        onStart: () => {
+          // Keep the words steady; only the two surrounding coachmark frames pulse.
+          pulseGuide(goalGuide);
+          pulseGuide(equipmentGuide);
+        },
+        onComplete: stopIntroGuides,
+        onError: stopIntroGuides,
+        onStop: stopIntroGuides,
+      });
+      if (!accepted) stopIntroGuides();
     });
     let stepTwoTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -2168,6 +2144,7 @@ export class Chapter2LabScene extends Phaser.Scene {
           resultButton?.setVisible(false);
         }
         selectedSensor = sensor;
+        narrationService.stop();
         stopGuide(goalGuide);
         stopGuide(equipmentGuide);
         this.tweens.killTweensOf(equipmentTitle);
@@ -2477,11 +2454,10 @@ export class Chapter2LabScene extends Phaser.Scene {
     render();
     root.once('destroy', () => {
       simulationTween?.stop();
-      introGuideTimer.remove(false);
+      narrationStart.remove(false);
+      narrationService.stop();
       stepTwoTimer?.remove(false);
       [equipmentGuide, goalGuide, stepTwoGuide].forEach((guide) => this.tweens.killTweensOf(guide));
-      this.tweens.killTweensOf(equipmentTitle);
-      this.tweens.killTweensOf(goalsTitle);
     });
   }
 
@@ -2988,7 +2964,8 @@ export class Chapter2LabScene extends Phaser.Scene {
     });
     const summaryHighlight = this.add
       .rectangle(490, 470, 438, 278, 0xf0c95a, 0.025)
-      .setStrokeStyle(4, Palette.gold, 0.96);
+      .setStrokeStyle(4, Palette.gold, 0.96)
+      .setVisible(false);
     root.add(summaryHighlight);
 
     const comparisonTitle = this.add
@@ -3095,25 +3072,11 @@ export class Chapter2LabScene extends Phaser.Scene {
     finishButton.onPress(() => this.showFinalQuiz());
     root.add(finishButton.root);
 
-    const summaryScripts = {
-      can: [
-        '第一，魚用鰓取得水中嘅溶解氧。食物鏈互相連接，一種生物改變，亦可能影響其他生物。',
-        '第二，一張相或者一次讀數只係一個時刻。要比較時間、地點同深度，先至唔容易漏咗變化。',
-        '第三，新一代溶解氧傳感器可以喺多個地點同深度連續記錄。紫外光有助抑制附著，而薄膜亦可以更換。',
-      ],
-      pth: [
-        '第一，鱼用鳃取得水中的溶解氧。食物链互相连接，一种生物发生变化，也可能影响其他生物。',
-        '第二，一张照片或一次读数只是一个时刻。要比较时间、地点和深度，才不容易漏掉变化。',
-        '第三，新一代溶解氧传感器可以在多个地点和深度连续记录。紫外光有助于抑制附着，薄膜也可以更换。',
-      ],
-      eng: [
-        'First, fish use gills to take dissolved oxygen from water. Food chains connect, so a change in one organism may affect others.',
-        'Second, one photo or reading captures only one moment. Compare time, place and depth so important changes are not missed.',
-        'Third, next-generation dissolved oxygen sensors record continuously across locations and depths. Ultraviolet light helps suppress fouling, and the film is replaceable.',
-      ],
-    } as const;
-    const voiceLanguage = { can: 'zh-HK', pth: 'zh-CN', eng: 'en-US' } as const;
-    let fallbackTimer: Phaser.Time.TimerEvent | null = null;
+    const summaryCues: readonly NarrationCueId[] = [
+      'lab-summary-1',
+      'lab-summary-2',
+      'lab-summary-3',
+    ];
     const narrateTheme = (index: number): void => {
       if (this.modalRoot !== root) return;
       if (index >= themeViews.length) {
@@ -3125,59 +3088,49 @@ export class Chapter2LabScene extends Phaser.Scene {
       themeViews.forEach((view, viewIndex) => view.setAlpha(viewIndex === index ? 1 : 0.38));
       summaryHighlight
         .setPosition(490 + index * 470, 470)
-        .setVisible(true)
+        .setVisible(false)
         .setAlpha(1);
       this.tweens.killTweensOf(summaryHighlight);
-      this.tweens.add({
-        targets: summaryHighlight,
-        alpha: { from: 0.28, to: 1 },
-        scale: { from: 0.985, to: 1.025 },
-        duration: 520,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.InOut',
-      });
       let finished = false;
       const finish = (): void => {
         if (finished) return;
         finished = true;
-        fallbackTimer?.remove(false);
-        fallbackTimer = null;
-        this.activeNarrationUtterance = null;
         this.tweens.killTweensOf(summaryHighlight);
+        summaryHighlight.setVisible(false).setScale(1).setAlpha(1);
         narrateTheme(index + 1);
       };
-      const speechAvailable = !(
-        typeof window === 'undefined' ||
-        window.speechSynthesis === undefined ||
-        typeof SpeechSynthesisUtterance === 'undefined'
-      );
-      if (!speechAvailable) {
-        fallbackTimer = this.time.delayedCall(6500, finish);
+      const cue = summaryCues[index];
+      if (cue === undefined) {
+        finish();
         return;
       }
-      const voice = experiencePreferences.getVoice();
-      const utterance = new SpeechSynthesisUtterance(summaryScripts[voice][index] ?? '');
-      this.activeNarrationUtterance = utterance;
-      utterance.lang = voiceLanguage[voice];
-      utterance.rate = 0.9;
-      utterance.onend = () => {
-        if (this.activeNarrationUtterance === utterance) finish();
-      };
-      utterance.onerror = () => {
-        if (this.activeNarrationUtterance === utterance) finish();
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utterance);
+      const accepted = narrationService.play(cue, {
+        onStart: () => {
+          summaryHighlight.setVisible(true).setAlpha(0.28).setScale(0.985);
+          this.tweens.add({
+            targets: summaryHighlight,
+            alpha: { from: 0.28, to: 1 },
+            scale: { from: 0.985, to: 1.025 },
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut',
+          });
+        },
+        onComplete: finish,
+        onError: finish,
+        onStop: () => {
+          this.tweens.killTweensOf(summaryHighlight);
+          summaryHighlight.setVisible(false).setScale(1).setAlpha(1);
+        },
+      });
+      if (!accepted) finish();
     };
     const narrationStart = this.time.delayedCall(320, () => narrateTheme(0));
     root.once('destroy', () => {
       narrationStart.remove(false);
-      fallbackTimer?.remove(false);
       this.tweens.killTweensOf(summaryHighlight);
-      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-      this.activeNarrationUtterance = null;
+      narrationService.stop();
     });
   }
 
@@ -3493,69 +3446,37 @@ export class Chapter2LabScene extends Phaser.Scene {
     endingButton.onPress(() => this.scene.start(SceneKeys.Menu, { screen: 'chapters' }));
     root.add(endingButton.root);
 
-    const endingScripts = {
-      can: {
-        lang: 'zh-HK',
-        text: '恭喜你完成海洋呼吸調查！你由舊相入面搵到變化，再用多個地點、多個深度同連續時間嘅監測網補足證據。今日真係有海洋學家同科學家，用傳感器、船隻同長期資料守護海洋。每一份可靠記錄，都可以幫助我哋了解同保護海洋生態。帶住好奇心返去生活，一齊留意同保護我哋嘅海洋。',
-      },
-      pth: {
-        lang: 'zh-CN',
-        text: '恭喜你完成海洋呼吸调查！你从旧照片里找到变化，再用多个地点、多个深度和连续时间的监测网补足证据。今天真的有海洋学家和科学家使用传感器、船只与长期资料守护海洋。每一份可靠记录，都能帮助我们了解和保护海洋生态。把好奇心带回生活，一起留意并保护我们的海洋。',
-      },
-      eng: {
-        lang: 'en-US',
-        text: 'Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean.',
-      },
-    } as const;
-    this.tweens.add({
-      targets: scienceSurface,
-      alpha: { from: 0.72, to: 1 },
-      duration: 900,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.InOut',
-    });
-    let fallbackTimer: Phaser.Time.TimerEvent | null = null;
     const completeNarration = (): void => {
       if (this.modalRoot !== root) return;
-      fallbackTimer?.remove(false);
-      fallbackTimer = null;
-      this.activeNarrationUtterance = null;
       this.tweens.killTweensOf(scienceSurface);
       scienceSurface.setAlpha(1);
       endingButton.setText(i18n.t('lab.endingAction')).setEnabled(true);
     };
     const narrationStart = this.time.delayedCall(380, () => {
-      const speechAvailable = !(
-        typeof window === 'undefined' ||
-        window.speechSynthesis === undefined ||
-        typeof SpeechSynthesisUtterance === 'undefined'
-      );
-      if (!speechAvailable) {
-        fallbackTimer = this.time.delayedCall(15000, completeNarration);
-        return;
-      }
-      const script = endingScripts[experiencePreferences.getVoice()];
-      const utterance = new SpeechSynthesisUtterance(script.text);
-      this.activeNarrationUtterance = utterance;
-      utterance.lang = script.lang;
-      utterance.rate = 0.9;
-      utterance.onend = () => {
-        if (this.activeNarrationUtterance === utterance) completeNarration();
-      };
-      utterance.onerror = () => {
-        if (this.activeNarrationUtterance === utterance) completeNarration();
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utterance);
+      const accepted = narrationService.play('lab-ending', {
+        onStart: () => {
+          this.tweens.add({
+            targets: scienceSurface,
+            alpha: { from: 0.72, to: 1 },
+            duration: 900,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut',
+          });
+        },
+        onComplete: completeNarration,
+        onError: completeNarration,
+        onStop: () => {
+          this.tweens.killTweensOf(scienceSurface);
+          scienceSurface.setAlpha(1);
+        },
+      });
+      if (!accepted) completeNarration();
     });
     root.once('destroy', () => {
       narrationStart.remove(false);
-      fallbackTimer?.remove(false);
       this.tweens.killTweensOf(scienceSurface);
-      if (typeof window !== 'undefined') window.speechSynthesis?.cancel();
-      this.activeNarrationUtterance = null;
+      narrationService.stop();
     });
   }
 
@@ -3690,6 +3611,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   }
 
   private closeModal(): void {
+    narrationService.stop();
     this.modalRoot?.destroy(true);
     this.modalRoot = null;
   }

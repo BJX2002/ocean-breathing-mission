@@ -13,20 +13,20 @@ import {
 describe('Chapter 1 opening model', () => {
   it('uses Cantonese by default for the Traditional Chinese UI', () => {
     expect(resolveOpeningVoice('can')).toBe('can');
-    expect(getOpeningVideoFile('op01', 'can')).toContain('/OP_NEW/OP1_Cantonese.web.mp4');
+    expect(getOpeningVideoFile('op01', 'can')).toContain('/OP_NEW/OP1_Cantonese.tablet.mp4');
   });
 
   it('keeps narration independent from the selected text language', () => {
-    expect(getOpeningVideoFile('op01', 'pth')).toContain('/OP_NEW/OP1_Mandarian.web.mp4');
-    expect(getOpeningVideoFile('op01', 'eng')).toContain('/OP_NEW/OP1_English.web.mp4');
+    expect(getOpeningVideoFile('op01', 'pth')).toContain('/OP_NEW/OP1_Mandarian.tablet.mp4');
+    expect(getOpeningVideoFile('op01', 'eng')).toContain('/OP_NEW/OP1_English.tablet.mp4');
     expect(resolveOpeningVoice('pth')).toBe('pth');
-    expect(getOpeningVideoFile('op02', 'pth')).toContain('/OP_NEW/OP2_Mandarian.web.mp4');
+    expect(getOpeningVideoFile('op02', 'pth')).toContain('/OP_NEW/OP2_Mandarian.tablet.mp4');
     expect(resolveOpeningVoice('eng')).toBe('eng');
   });
 
-  it('uses a smaller fast-start opening on touch devices without changing desktop media', () => {
+  it('uses the smaller fast-start opening on desktop and touch devices', () => {
     expect(getOpeningVideoFile('op01', 'can', 'desktop')).toContain(
-      '/OP_NEW/OP1_Cantonese.web.mp4',
+      '/OP_NEW/OP1_Cantonese.tablet.mp4',
     );
     expect(getOpeningVideoFile('op01', 'can', 'tablet')).toContain(
       '/OP_NEW/OP1_Cantonese.tablet.mp4',

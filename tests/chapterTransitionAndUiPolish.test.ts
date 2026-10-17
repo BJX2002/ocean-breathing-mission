@@ -30,8 +30,8 @@ describe('chapter selection reliability and requested UI polish', () => {
     expect(lab).toContain('const y = 412 + index * 128;');
     expect(lab).toContain('createResearchSurface(this, 450, 816, 580, 132');
     expect(lab).toContain('.rectangle(600, 318, 270, 48');
-    expect(lab).toContain('pulseText(equipmentTitle);');
-    expect(lab).toContain('pulseText(goalsTitle);');
+    expect(lab).not.toContain('pulseText(equipmentTitle);');
+    expect(lab).not.toContain('pulseText(goalsTitle);');
     expect(lab).toContain('pulseGuide(equipmentGuide);');
     expect(lab).toContain('pulseGuide(goalGuide);');
     expect(lab).toContain('.rectangle(318, 318, 292, 58');

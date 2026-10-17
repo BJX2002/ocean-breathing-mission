@@ -27,10 +27,7 @@ import {
   ensureNormalizedTextureSequence,
 } from '../graphics/TextureFactory';
 import { saveService } from '../services/SaveService';
-import {
-  narrationService,
-  type NarrationCueId,
-} from '../services/NarrationService';
+import { narrationService, type NarrationCueId } from '../services/NarrationService';
 import {
   currentPhotoKeyForStation,
   getCreatureFramePlan,
@@ -143,6 +140,8 @@ export class DiveScene extends Phaser.Scene {
   private lessonOverlayObjects: Phaser.GameObjects.GameObject[] = [];
   private lessonOverlayTimers: Phaser.Time.TimerEvent[] = [];
   private foodWebPuzzle: FoodWebPuzzle | null = null;
+  private foodWebNarrationHighlight: Phaser.GameObjects.Rectangle | null = null;
+  private foodWebNarrationButton: ResearchButton | null = null;
   private doBridgeNarrationPlayed = false;
 
   private readonly onDepleted = (payload: GameEventMap['oxygen:depleted']): void => {
@@ -212,9 +211,12 @@ export class DiveScene extends Phaser.Scene {
     this.pendingObservationReview = null;
     this.doBridgeNarrationPlayed = false;
     narrationService.preload([
+      'dive-mission-brief',
       'report-today-gallery',
       'report-compare-1',
       'report-compare-2',
+      'report-food-lesson',
+      'report-food-web',
       'report-do-question',
       'report-do-bridge',
       'report-recap-1',
@@ -575,7 +577,7 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0)
       .setDepth(3000)
       .setInteractive();
-    const panel = createResearchSurface(this, cx, cy, 1410, 660, {
+    const panel = createResearchSurface(this, cx, cy, 1410, 620, {
       depth: 3001,
       fill: Palette.modal,
       border: Palette.accentSoft,
@@ -602,53 +604,25 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3003);
+    const narrationHighlight = this.add
+      .rectangle(cx, 475, 1180, 170, 0xf0c95a, 0.02)
+      .setStrokeStyle(4, Palette.gold, 0.88)
+      .setDepth(3002)
+      .setVisible(false);
     const body = this.add
-      .text(cx, 398, i18n.t('dive.missionBriefBody'), {
+      .text(cx, 475, i18n.t('dive.missionBriefBody'), {
         fontFamily: 'sans-serif',
-        fontSize: '22px',
-        color: '#cce7ed',
-        align: 'center',
-        wordWrap: { width: 1120, useAdvancedWrap: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(3003);
-    const firstStepCard = createResearchSurface(this, cx, 555, 1120, 185, {
-      depth: 3002,
-      fill: Palette.cardSoft,
-      border: Palette.gold,
-      borderAlpha: 0.58,
-      radius: 22,
-      shadow: false,
-    });
-    const firstStepNumber = this.add
-      .text(cx - 475, 555, '01', {
-        fontFamily: 'monospace',
-        fontSize: '32px',
-        color: '#f0c95a',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5)
-      .setDepth(3003);
-    const firstStepTitle = this.add
-      .text(cx - 410, 515, i18n.t('dive.missionBriefFirstStep'), {
-        fontFamily: 'sans-serif',
-        fontSize: '27px',
+        fontSize: '30px',
         color: Palette.textLight,
         fontStyle: 'bold',
+        align: 'center',
+        lineSpacing: 10,
+        wordWrap: { width: 1060, useAdvancedWrap: true },
       })
-      .setOrigin(0, 0.5)
-      .setDepth(3003);
-    const firstStepAction = this.add
-      .text(cx - 410, 574, i18n.t('dive.demoFirstStep'), {
-        fontFamily: 'sans-serif',
-        fontSize: '22px',
-        color: '#cce7ed',
-        wordWrap: { width: 810, useAdvancedWrap: true },
-      })
-      .setOrigin(0, 0.5)
+      .setOrigin(0.5)
       .setDepth(3003);
     const progress = this.add
-      .text(cx, 682, i18n.t('dive.missionBriefProgress'), {
+      .text(cx, 610, i18n.t('dive.missionBriefProgress'), {
         fontFamily: 'sans-serif',
         fontSize: '20px',
         color: Palette.accentText,
@@ -657,7 +631,7 @@ export class DiveScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3003);
-    const start = new ResearchButton(this, cx, 780, 430, 72, i18n.t('dive.startSurvey'), {
+    const start = new ResearchButton(this, cx, 735, 430, 72, i18n.t('dive.startSurvey'), {
       tone: 'primary',
       fontSize: 25,
       depth: 3004,
@@ -672,19 +646,38 @@ export class DiveScene extends Phaser.Scene {
         saveService.save(gameState.toSave());
       }
     });
+    const voiceButton = new ResearchButton(
+      this,
+      1440,
+      735,
+      300,
+      64,
+      i18n.t('report.aiVoiceReplay'),
+      { tone: 'secondary', fontSize: 20, depth: 3004 },
+    );
     this.overlayObjects = [
       dim,
       panel,
       eyebrow,
       title,
+      narrationHighlight,
       body,
-      firstStepCard,
-      firstStepNumber,
-      firstStepTitle,
-      firstStepAction,
       progress,
       start.root,
+      voiceButton.root,
     ];
+    const playBriefingNarration = (automatic = false): void => {
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+      const accepted = this.playNarrationCue('dive-mission-brief', narrationHighlight, {
+        automatic,
+        hideHighlightWhenIdle: true,
+        onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+        onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+      });
+      if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+    };
+    voiceButton.onPress(() => playBriefingNarration(false));
+    playBriefingNarration(true);
   }
 
   /**
@@ -1338,6 +1331,21 @@ export class DiveScene extends Phaser.Scene {
       onComplete: unlockContinue,
     });
 
+    this.foodWebNarrationHighlight = this.add
+      .rectangle(650, top + 64, 1040, 116, 0xf0c95a, 0.02)
+      .setStrokeStyle(4, Palette.gold, 0.88)
+      .setDepth(3005)
+      .setVisible(false);
+    this.foodWebNarrationButton = new ResearchButton(
+      this,
+      1580,
+      top + 760,
+      300,
+      64,
+      i18n.t('report.aiVoiceReplay'),
+      { tone: 'secondary', fontSize: 20, depth: 3006 },
+    );
+
     const button = this.add
       .text(cx, top + 760, i18n.t('report.foodWebLocked'), {
         fontFamily: 'sans-serif',
@@ -1350,8 +1358,15 @@ export class DiveScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(3002)
       .setInteractive({ useHandCursor: true });
-    this.overlayObjects = [dim, panel, button];
+    this.overlayObjects = [
+      dim,
+      panel,
+      button,
+      this.foodWebNarrationHighlight,
+      this.foodWebNarrationButton.root,
+    ];
     continueButton = button;
+    this.foodWebNarrationButton.onPress(() => this.playFoodWebNarration(false));
     button.on(Phaser.Input.Events.POINTER_UP, () => {
       if (!foodWebComplete) {
         button.setText(i18n.t('report.foodWebLocked'));
@@ -1553,8 +1568,7 @@ export class DiveScene extends Phaser.Scene {
           const accepted = this.playNarrationCue('report-today-gallery', narrationHighlight, {
             automatic,
             hideHighlightWhenIdle: true,
-            onComplete: () =>
-              voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+            onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
             onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
           });
           if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
@@ -1575,7 +1589,7 @@ export class DiveScene extends Phaser.Scene {
         const questionCue: NarrationCueId = page === 1 ? 'report-compare-1' : 'report-compare-2';
         const narrationHighlight = add(
           this.add
-            .rectangle(GAME_WIDTH / 2, 770, 1320, 270, 0xf0c95a, 0.025)
+            .rectangle(GAME_WIDTH / 2, 750, 1320, 360, 0xf0c95a, 0.018)
             .setStrokeStyle(4, Palette.gold, 0.82)
             .setDepth(4103)
             .setVisible(false),
@@ -1634,8 +1648,7 @@ export class DiveScene extends Phaser.Scene {
           const accepted = this.playNarrationCue(questionCue, narrationHighlight, {
             automatic,
             hideHighlightWhenIdle: true,
-            onComplete: () =>
-              voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+            onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
             onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
           });
           if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
@@ -2049,6 +2062,13 @@ export class DiveScene extends Phaser.Scene {
         goldRail: true,
       }),
     );
+    const narrationHighlight = add(
+      this.add
+        .rectangle(GAME_WIDTH / 2, 282, 1320, 165, 0xf0c95a, 0.02)
+        .setStrokeStyle(4, Palette.gold, 0.88)
+        .setDepth(4101.5)
+        .setVisible(false),
+    );
     add(
       this.add
         .text(GAME_WIDTH / 2, 175, i18n.t('report.foodLessonTitle'), {
@@ -2263,7 +2283,29 @@ export class DiveScene extends Phaser.Scene {
         button.setText(i18n.t('report.foodLessonStart')).setTone('primary');
       });
     });
+    const voiceButton = new ResearchButton(
+      this,
+      1510,
+      875,
+      310,
+      64,
+      i18n.t('report.aiVoiceReplay'),
+      { tone: 'secondary', fontSize: 20, depth: 4105 },
+    );
+    add(voiceButton.root);
+    const playFoodLessonNarration = (automatic = false): void => {
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+      const accepted = this.playNarrationCue('report-food-lesson', narrationHighlight, {
+        automatic,
+        hideHighlightWhenIdle: true,
+        onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+        onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+      });
+      if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+    };
+    voiceButton.onPress(() => playFoodLessonNarration(false));
     this.lessonOverlayObjects = objects;
+    playFoodLessonNarration(true);
     this.sharpenVisibleText();
   }
 
@@ -2426,8 +2468,7 @@ export class DiveScene extends Phaser.Scene {
         const accepted = this.playNarrationCue(activeQuestionCue, narrationHighlight, {
           automatic,
           hideHighlightWhenIdle: true,
-          onComplete: () =>
-            voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+          onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
           onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
         });
         if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
@@ -2460,11 +2501,9 @@ export class DiveScene extends Phaser.Scene {
             .setColor(correct ? '#d8fffb' : '#fff3b0')
             .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
             .setText(i18n.t(feedbackKey));
-          this.playNarrationCue(
-            correct ? 'feedback-correct' : 'feedback-try-again',
-            button.root,
-            { hideHighlightWhenIdle: false },
-          );
+          this.playNarrationCue(correct ? 'feedback-correct' : 'feedback-try-again', button.root, {
+            hideHighlightWhenIdle: false,
+          });
           if (!correct) {
             this.tweens.add({
               targets: button.root,
@@ -2814,15 +2853,11 @@ export class DiveScene extends Phaser.Scene {
       .setStrokeStyle(4, Palette.gold, 0.9)
       .setDepth(3001.5)
       .setVisible(false);
-    const button = new ResearchButton(
-      this,
-      1280,
-      825,
-      360,
-      64,
-      i18n.t('report.startRecap'),
-      { tone: 'primary', fontSize: 24, depth: 3003 },
-    );
+    const button = new ResearchButton(this, 1280, 825, 360, 64, i18n.t('report.startRecap'), {
+      tone: 'primary',
+      fontSize: 24,
+      depth: 3003,
+    });
     button.onPress(() => this.showChapter1Recap());
     const voiceButton = new ResearchButton(
       this,
@@ -4605,6 +4640,10 @@ export class DiveScene extends Phaser.Scene {
         stopPulse();
         options.onError?.();
       },
+      onStop: () => {
+        stopPulse();
+        options.onError?.();
+      },
     });
     if (!accepted) stopPulse();
     return accepted;
@@ -4616,6 +4655,8 @@ export class DiveScene extends Phaser.Scene {
     this.foodWebPuzzle = null;
     for (const object of this.overlayObjects) object.destroy();
     this.overlayObjects = [];
+    this.foodWebNarrationHighlight = null;
+    this.foodWebNarrationButton = null;
   }
 
   private destroyLessonOverlay(): void {
@@ -4630,6 +4671,7 @@ export class DiveScene extends Phaser.Scene {
   }
 
   private setReportOverlayVisible(visible: boolean): void {
+    if (!visible) narrationService.stop();
     for (const object of this.overlayObjects) {
       const visibleObject = object as Phaser.GameObjects.GameObject & {
         setVisible(value: boolean): Phaser.GameObjects.GameObject;
@@ -4637,6 +4679,22 @@ export class DiveScene extends Phaser.Scene {
       visibleObject.setVisible(visible).setActive(visible);
     }
     this.foodWebPuzzle?.setVisible(visible);
+    this.foodWebNarrationHighlight?.setVisible(false);
+    if (visible) this.playFoodWebNarration(true);
+  }
+
+  private playFoodWebNarration(automatic: boolean): void {
+    const highlight = this.foodWebNarrationHighlight;
+    const button = this.foodWebNarrationButton;
+    if (highlight === null || button === null) return;
+    button.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+    const accepted = this.playNarrationCue('report-food-web', highlight, {
+      automatic,
+      hideHighlightWhenIdle: true,
+      onComplete: () => button.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
+      onError: () => button.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+    });
+    if (!accepted) button.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
   }
 
   private selectMission(): Mission | null {

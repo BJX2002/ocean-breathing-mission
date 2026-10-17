@@ -16,11 +16,11 @@ export function getOpeningVideoFile(
 ): string {
   const language = voice === 'can' ? 'Cantonese' : voice === 'pth' ? 'Mandarian' : 'English';
   const opening = stage === 'op01' ? 'OP1' : 'OP2';
-  // Tablet copies keep the same subtitles and narration while using a 720p,
-  // fast-start encode. This avoids making iPad Safari fetch a 10–11 MB 1080p
-  // first clip before it can display the opening frame.
-  const suffix = profile === 'tablet' ? 'tablet' : 'web';
-  return `assets/chapter1/OP_NEW/${opening}_${language}.${suffix}.mp4`;
+  // The 720p fast-start copies preserve the same subtitles and narration at
+  // roughly one fifth of the transfer size. They are now shared by desktop
+  // and tablet so the first opening does not stall on a 10–11 MB download.
+  void profile;
+  return `assets/chapter1/OP_NEW/${opening}_${language}.tablet.mp4`;
 }
 
 export function nextOpeningStage(stage: OpeningStage): OpeningStage | 'dive' {
