@@ -37,23 +37,19 @@ describe('Chapter 2 monitoring teaching flow', () => {
     expect(comparison).toContain('this.monitoringComparisonComplete = true;');
   });
 
-  it('waits for each real utterance to finish before starting the next narration', () => {
+  it('uses the same recorded narration service as Chapter 1 and advances on completion', () => {
     const comparison = section(
       source,
       'private showMonitoringComparisonModal(): void',
       'private showDeploymentModal(): void',
     );
 
-    expect(comparison).toContain('utterance.onend = () => {');
-    expect(comparison).toContain('if (this.activeNarrationUtterance === utterance) finish();');
-    expect(comparison).toContain('if (!speechAvailable) {');
-    expect(comparison).toContain('narrationFallback = this.time.delayedCall(5200, finish);');
-    expect(comparison.indexOf('if (!speechAvailable) {')).toBeLessThan(
-      comparison.indexOf('narrationFallback = this.time.delayedCall(5200, finish);'),
-    );
-    expect(
-      comparison.indexOf('narrationFallback = this.time.delayedCall(5200, finish);'),
-    ).toBeLessThan(comparison.indexOf('window.speechSynthesis.speak(utterance);'));
+    expect(comparison).toContain("'lab-compare-manual'");
+    expect(comparison).toContain("'lab-compare-fixed'");
+    expect(comparison).toContain("'lab-compare-sensor'");
+    expect(comparison).toContain('narrationService.play(cue, {');
+    expect(comparison).toContain('onComplete: finish');
+    expect(comparison).not.toContain('SpeechSynthesisUtterance');
   });
 
   it('starts deployment with no preselected answer and only three teaching choices', () => {
@@ -110,8 +106,9 @@ describe('Chapter 2 monitoring teaching flow', () => {
     expect(deployment).toContain('createResearchSurface(this, 450, 816, 580, 132');
     expect(deployment).toContain('.rectangle(600, 318, 270, 48');
     expect(deployment).toContain("fontSize: isEnglish ? '21px' : '23px'");
-    expect(deployment).toContain('pulseText(equipmentTitle);');
-    expect(deployment).toContain('pulseText(goalsTitle);');
+    expect(deployment).not.toContain('pulseText(equipmentTitle);');
+    expect(deployment).not.toContain('pulseText(goalsTitle);');
+    expect(deployment).toContain("narrationService.play('lab-deployment-guide'");
     expect(deployment).not.toContain('toolGuide');
   });
 

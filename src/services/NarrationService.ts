@@ -8,6 +8,7 @@ export interface NarrationCallbacks {
   readonly onStart?: () => void;
   readonly onComplete?: () => void;
   readonly onError?: () => void;
+  readonly onStop?: () => void;
 }
 
 const LANGUAGE_TAGS: Readonly<Record<NarrationVoice, string>> = {
@@ -19,6 +20,7 @@ const LANGUAGE_TAGS: Readonly<Record<NarrationVoice, string>> = {
 class NarrationService {
   private currentAudio: HTMLAudioElement | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
+  private currentStopCallback: (() => void) | null = null;
   private readonly automaticStarts = new Set<NarrationCueId>();
   private readonly preloadedAudio = new Map<string, HTMLAudioElement>();
 
@@ -35,6 +37,12 @@ class NarrationService {
     }
   }
 
+  /** Start a fresh playthrough without carrying auto-play history from the previous run. */
+  resetAutomaticStarts(): void {
+    this.stop();
+    this.automaticStarts.clear();
+  }
+
   play(cue: NarrationCueId, callbacks: NarrationCallbacks = {}): boolean {
     if (callbacks.automatic === true && this.automaticStarts.has(cue)) return false;
     this.stop();
@@ -46,6 +54,8 @@ class NarrationService {
   }
 
   stop(): void {
+    const onStop = this.currentStopCallback;
+    this.currentStopCallback = null;
     if (this.currentAudio !== null) {
       this.currentAudio.pause();
       this.currentAudio.removeAttribute('src');
@@ -56,6 +66,7 @@ class NarrationService {
       window.speechSynthesis?.cancel();
       this.currentUtterance = null;
     }
+    onStop?.();
   }
 
   isPlaying(): boolean {
@@ -78,7 +89,10 @@ class NarrationService {
     const finish = (success: boolean): void => {
       if (finished) return;
       finished = true;
-      if (this.currentAudio === audio) this.currentAudio = null;
+      if (this.currentAudio === audio) {
+        this.currentAudio = null;
+        this.currentStopCallback = null;
+      }
       if (success) callbacks.onComplete?.();
       else callbacks.onError?.();
     };
@@ -96,12 +110,16 @@ class NarrationService {
     audio.addEventListener(
       'error',
       () => {
-        if (this.currentAudio === audio) this.currentAudio = null;
+        if (this.currentAudio === audio) {
+          this.currentAudio = null;
+          this.currentStopCallback = null;
+        }
         if (!this.playSpeechFallback(cue, voice, callbacks, started)) finish(false);
       },
       { once: true },
     );
     this.currentAudio = audio;
+    this.currentStopCallback = callbacks.onStop ?? null;
     void audio.play().catch(() => finish(false));
     return true;
   }
@@ -131,6 +149,7 @@ class NarrationService {
     utterance.pitch = 1;
     if (matchingVoice !== undefined) utterance.voice = matchingVoice;
     this.currentUtterance = utterance;
+    this.currentStopCallback = callbacks.onStop ?? null;
     utterance.onstart = () => {
       if (callbacks.automatic === true) this.automaticStarts.add(cue);
       if (!alreadyStarted) callbacks.onStart?.();
@@ -138,11 +157,13 @@ class NarrationService {
     utterance.onend = () => {
       if (this.currentUtterance !== utterance) return;
       this.currentUtterance = null;
+      this.currentStopCallback = null;
       callbacks.onComplete?.();
     };
     utterance.onerror = () => {
       if (this.currentUtterance !== utterance) return;
       this.currentUtterance = null;
+      this.currentStopCallback = null;
       callbacks.onError?.();
     };
     window.speechSynthesis.cancel();

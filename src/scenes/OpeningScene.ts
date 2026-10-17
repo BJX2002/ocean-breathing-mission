@@ -8,6 +8,7 @@ import { ensureEdgeTransparentTexture } from '../graphics/TextureFactory';
 import { CHAPTER1_ART_MANIFEST } from '../graphics/assetManifest';
 import { queueSceneArt } from '../graphics/SceneArtLoader';
 import { usesTouchControls } from '../input/ControlScheme';
+import { narrationService, type NarrationCueId } from '../services/NarrationService';
 import { createResearchSurface } from '../ui/ResearchUi';
 import {
   getOpeningVideoFile,
@@ -116,9 +117,11 @@ export class OpeningScene extends Phaser.Scene {
 
   preload(): void {
     queueSceneArt(this, CHAPTER1_ART_MANIFEST);
+    narrationService.preload(['opening-photo-review', 'opening-photo-conclusion']);
   }
 
   create(): void {
+    narrationService.resetAutomaticStarts();
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
     const diveDebugScreens = [
       'report',
@@ -159,6 +162,7 @@ export class OpeningScene extends Phaser.Scene {
   }
 
   private renderStage(): void {
+    narrationService.stop();
     this.clearUi();
     this.destroyVideo();
     if (this.stage === 'photoReview') {
@@ -624,6 +628,11 @@ export class OpeningScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
       .setDepth(10);
+    const narrationHighlight = this.add
+      .rectangle(760, 848, 990, 116, 0xf0c95a, 0.025)
+      .setStrokeStyle(4, Palette.gold, 0.9)
+      .setDepth(9)
+      .setVisible(false);
     const stepLabel = this.add
       .text(286, 820, i18n.t('common.stepLabel'), {
         fontFamily: 'monospace',
@@ -661,7 +670,15 @@ export class OpeningScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setDepth(10);
-    this.uiObjects.push(viewport, label, stepLabel, stepHint, tipLabel, controlHint);
+    this.uiObjects.push(
+      viewport,
+      label,
+      narrationHighlight,
+      stepLabel,
+      stepHint,
+      tipLabel,
+      controlHint,
+    );
 
     const tabX = 430;
     for (const [index, stationName] of [
@@ -764,6 +781,37 @@ export class OpeningScene extends Phaser.Scene {
       this.startWithNarration = false;
       this.renderStage();
     });
+    const voiceButton = this.addButton(
+      1630,
+      GAME_HEIGHT - 70,
+      i18n.t('report.aiVoiceReplay'),
+      false,
+    );
+    voiceButton.setFontSize(22).setPadding(24, 14, 24, 14);
+    const playPhotoReviewNarration = (automatic = false): void => {
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).disableInteractive().setAlpha(0.72);
+      const accepted = this.playNarrationCue('opening-photo-review', narrationHighlight, {
+        automatic,
+        onComplete: () =>
+          voiceButton
+            .setText(i18n.t('report.aiVoiceReplay'))
+            .setInteractive({ useHandCursor: true })
+            .setAlpha(1),
+        onError: () =>
+          voiceButton
+            .setText(i18n.t('report.aiVoiceRetry'))
+            .setInteractive({ useHandCursor: true })
+            .setAlpha(1),
+      });
+      if (!accepted) {
+        voiceButton
+          .setText(i18n.t('report.aiVoiceReplay'))
+          .setInteractive({ useHandCursor: true })
+          .setAlpha(1);
+      }
+    };
+    voiceButton.on(Phaser.Input.Events.POINTER_UP, () => playPhotoReviewNarration(false));
+    playPhotoReviewNarration(true);
   }
 
   private renderPhotoConclusion(): void {
@@ -780,6 +828,11 @@ export class OpeningScene extends Phaser.Scene {
       shadow: true,
       goldRail: true,
     });
+    const narrationHighlight = this.add
+      .rectangle(GAME_WIDTH / 2, 430, 1320, 430, 0xf0c95a, 0.02)
+      .setStrokeStyle(4, Palette.gold, 0.88)
+      .setDepth(2)
+      .setVisible(false);
     const title = this.add
       .text(GAME_WIDTH / 2, 170, i18n.t('opening.photoConclusionTitle'), {
         fontFamily: 'sans-serif',
@@ -824,7 +877,7 @@ export class OpeningScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(3);
-    this.uiObjects.push(panel, title, question, options, feedback);
+    this.uiObjects.push(panel, narrationHighlight, title, question, options, feedback);
 
     let continueButton: Phaser.GameObjects.Text | null = null;
     const choices = [
@@ -869,6 +922,7 @@ export class OpeningScene extends Phaser.Scene {
             ),
           )
           .setColor(choice.correct ? '#91e6a7' : '#ffb09d');
+        narrationService.play(choice.correct ? 'feedback-correct' : 'feedback-try-again');
         continueButton?.setVisible(choice.correct);
         if (choice.correct && continueButton !== null) this.pulseTextButton(continueButton);
       });
@@ -892,6 +946,32 @@ export class OpeningScene extends Phaser.Scene {
       this.stage = 'photoReview';
       this.renderStage();
     });
+    const voiceButton = this.addButton(1490, 835, i18n.t('report.aiVoiceReplay'), false);
+    voiceButton.setFontSize(22).setPadding(24, 14, 24, 14);
+    const playConclusionNarration = (automatic = false): void => {
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).disableInteractive().setAlpha(0.72);
+      const accepted = this.playNarrationCue('opening-photo-conclusion', narrationHighlight, {
+        automatic,
+        onComplete: () =>
+          voiceButton
+            .setText(i18n.t('report.aiVoiceReplay'))
+            .setInteractive({ useHandCursor: true })
+            .setAlpha(1),
+        onError: () =>
+          voiceButton
+            .setText(i18n.t('report.aiVoiceRetry'))
+            .setInteractive({ useHandCursor: true })
+            .setAlpha(1),
+      });
+      if (!accepted) {
+        voiceButton
+          .setText(i18n.t('report.aiVoiceReplay'))
+          .setInteractive({ useHandCursor: true })
+          .setAlpha(1);
+      }
+    };
+    voiceButton.on(Phaser.Input.Events.POINTER_UP, () => playConclusionNarration(false));
+    playConclusionNarration(true);
   }
 
   private createPhotoHotspots(displayWidth: number, displayHeight: number): void {
@@ -1158,6 +1238,55 @@ export class OpeningScene extends Phaser.Scene {
     });
   }
 
+  private playNarrationCue(
+    cue: NarrationCueId,
+    highlightTarget: Phaser.GameObjects.GameObject,
+    options: {
+      readonly automatic?: boolean;
+      readonly onComplete?: () => void;
+      readonly onError?: () => void;
+    } = {},
+  ): boolean {
+    const target = highlightTarget as Phaser.GameObjects.GameObject & {
+      setAlpha(value: number): Phaser.GameObjects.GameObject;
+      setVisible(value: boolean): Phaser.GameObjects.GameObject;
+    };
+    const stopPulse = (): void => {
+      this.tweens.killTweensOf(target);
+      target.setAlpha(1);
+      target.setVisible(false);
+    };
+    const accepted = narrationService.play(cue, {
+      automatic: options.automatic,
+      onStart: () => {
+        target.setVisible(true);
+        target.setAlpha(0.42);
+        this.tweens.add({
+          targets: target,
+          alpha: { from: 0.42, to: 1 },
+          duration: 560,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.InOut',
+        });
+      },
+      onComplete: () => {
+        stopPulse();
+        options.onComplete?.();
+      },
+      onError: () => {
+        stopPulse();
+        options.onError?.();
+      },
+      onStop: () => {
+        stopPulse();
+        options.onError?.();
+      },
+    });
+    if (!accepted) stopPulse();
+    return accepted;
+  }
+
   private handleVideoComplete(stage: 'op01' | 'op02'): void {
     if (stage === 'op01') {
       this.photoIndex = 0;
@@ -1373,6 +1502,7 @@ export class OpeningScene extends Phaser.Scene {
     this.input.keyboard?.off('keydown-DOWN', this.onPhotoPanDown, this);
     this.input.keyboard?.off('keydown-A', this.onPhotoPrevious, this);
     this.input.keyboard?.off('keydown-D', this.onPhotoNext, this);
+    narrationService.stop();
     this.destroyVideo();
     this.clearUi();
   }

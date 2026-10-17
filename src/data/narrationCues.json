@@ -44,6 +44,71 @@
     "pth": "问题四：如果小型鱼明显减少，食物网中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
     "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food web? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
   },
+  "opening-photo-review": {
+    "can": "步驟：點擊黃色光圈，搵出以前嘅海洋線索。提示：需要時可以拖動或者縮放相片；用左右箭嘴切換相片。",
+    "pth": "步骤：点击黄色光圈，找出以前的海洋线索。提示：需要时可以拖动或缩放照片；用左右箭头切换照片。",
+    "eng": "Step: Select the yellow ring to find an old ocean clue. Tip: Drag or zoom the photo when needed, and use the arrows to change photos."
+  },
+  "opening-photo-conclusion": {
+    "can": "問題：三個地點嘅歷史相，共同記錄咗乜嘢？A，三個地點都記錄到清楚可見嘅海洋生物。B，三個地點都完全睇唔到海洋生物。",
+    "pth": "问题：三个地点的历史照片共同记录了什么？A，三个地点都记录到清楚可见的海洋生物。B，三个地点看起来完全没有海洋生物。",
+    "eng": "Question: What did the historical photographs record at all three locations? A: Clearly visible marine organisms. B: No visible marine organisms."
+  },
+  "dive-mission-brief": {
+    "can": "而家先操控潛水員，跟住黃色光圈游到灣口。其他任務會喺需要嗰陣逐步出現。",
+    "pth": "现在先操控潜水员，跟着黄色光圈游到湾口。其他任务会在需要时逐步出现。",
+    "eng": "First, control the diver and follow the yellow target to the bay entrance. The other tasks will appear when you need them."
+  },
+  "report-food-lesson": {
+    "can": "食物鏈表示邊個食邊個。能量由食物傳俾食佢嘅生物，所以箭嘴由食物指向取食者。請按照能量傳遞嘅順序，將三張卡拖到上面嘅空格。",
+    "pth": "食物链表示谁吃谁。能量从食物传给吃它的生物，所以箭头由食物指向取食者。请按照能量传递的顺序，把三张卡拖到上方空格。",
+    "eng": "A food chain shows who eats whom. Energy moves from food to the organism that eats it, so arrows point from food to eater. Drag the three cards into the upper slots in energy-flow order."
+  },
+  "report-food-web": {
+    "can": "拼好食物網。將四張魚類卡拖到正確嘅角色區，完成呢條食物鏈。",
+    "pth": "拼好食物网。把四张鱼类卡拖进正确角色区，完成这条食物链。",
+    "eng": "Build the food web. Drag the four fish cards into their correct roles to complete this food chain."
+  },
+  "lab-compare-manual": {
+    "can": "船隻採樣一次可以調查同一地點三個深度，但每層只留低一個時刻嘅讀數，而且價錢最貴。",
+    "pth": "船只采样一次可以调查同一个地点的三个深度，但每层只留下一个时刻的读数，而且价格最贵。",
+    "eng": "A vessel visit samples three depths at one location, but each depth gets only one moment, and this is the most expensive method."
+  },
+  "lab-compare-fixed": {
+    "can": "傳統固定探頭可以連續記錄一個點，但生物附著會令佢斷線，維修仲要用額外預算。",
+    "pth": "传统固定探头可以连续记录一个点，但生物附着会让它断线，维修还要使用额外预算。",
+    "eng": "A conventional fixed probe records one point continuously, but biofouling can break its link and repairs use more budget."
+  },
+  "lab-compare-sensor": {
+    "can": "新一代溶解氧傳感器可以組成多點連續監測網，紫外光有助抑制附著，而且薄膜可以更換。",
+    "pth": "新一代溶解氧传感器可以组成多点连续监测网，紫外光有助于抑制附着，而且薄膜可以更换。",
+    "eng": "Next-generation dissolved oxygen sensors form a continuous multi-point network. Ultraviolet light helps suppress fouling, and the film is replaceable."
+  },
+  "lab-deployment-guide": {
+    "can": "第一步：選擇本輪工具。成功條件有三項：九個點都有設備，九個點資料完整，而且唔可以超出預算。",
+    "pth": "第一步：选择本轮工具。成功条件有三项：九个点都有设备，九个点资料完整，而且不能超出预算。",
+    "eng": "First, choose this round's tool. There are three success rules: equipment at all nine points, complete data at all nine points, and stay within budget."
+  },
+  "lab-summary-1": {
+    "can": "第一，魚用鰓取得水中嘅溶解氧。食物鏈互相連接，一種生物改變，亦可能影響其他生物。",
+    "pth": "第一，鱼用鳃取得水中的溶解氧。食物链互相连接，一种生物发生变化，也可能影响其他生物。",
+    "eng": "First, fish use gills to take dissolved oxygen from water. Food chains connect, so a change in one organism may affect others."
+  },
+  "lab-summary-2": {
+    "can": "第二，一張相或者一次讀數只係一個時刻。要比較時間、地點同深度，先至唔容易漏咗變化。",
+    "pth": "第二，一张照片或一次读数只是一个时刻。要比较时间、地点和深度，才不容易漏掉变化。",
+    "eng": "Second, one photo or reading captures only one moment. Compare time, place and depth so important changes are not missed."
+  },
+  "lab-summary-3": {
+    "can": "第三，新一代溶解氧傳感器可以喺多個地點同深度連續記錄。紫外光有助抑制附著，而薄膜亦可以更換。",
+    "pth": "第三，新一代溶解氧传感器可以在多个地点和深度连续记录。紫外光有助于抑制附着，薄膜也可以更换。",
+    "eng": "Third, next-generation dissolved oxygen sensors record continuously across locations and depths. Ultraviolet light helps suppress fouling, and the film is replaceable."
+  },
+  "lab-ending": {
+    "can": "恭喜你完成海洋呼吸調查！你由舊相入面搵到變化，再用多個地點、多個深度同連續時間嘅監測網補足證據。今日真係有海洋學家同科學家，用傳感器、船隻同長期資料守護海洋。每一份可靠記錄，都可以幫助我哋了解同保護海洋生態。帶住好奇心返去生活，一齊留意同保護我哋嘅海洋。",
+    "pth": "恭喜你完成海洋呼吸调查！你从旧照片里找到变化，再用多个地点、多个深度和连续时间的监测网补足证据。今天真的有海洋学家和科学家使用传感器、船只与长期资料守护海洋。每一份可靠记录，都能帮助我们了解和保护海洋生态。把好奇心带回生活，一起留意并保护我们的海洋。",
+    "eng": "Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean."
+  },
   "feedback-correct": {
     "can": "答啱喇。",
     "pth": "答对了。",
