@@ -217,7 +217,7 @@ export class DiveScene extends Phaser.Scene {
       'report-compare-2',
       'report-food-lesson',
       'report-food-web',
-      'report-do-question',
+      'report-fish-gills-question-v2',
       'report-do-bridge',
       'report-recap-1',
       'report-recap-2',
@@ -386,6 +386,10 @@ export class DiveScene extends Phaser.Scene {
    */
   private applyDebugScreenRequest(map: DiveMap): boolean {
     const requested = new URLSearchParams(window.location.search).get('screen');
+    if (requested === 'briefing') {
+      this.time.delayedCall(80, () => this.showMissionBriefing());
+      return true;
+    }
     if (requested === 'recap') {
       this.paused = true;
       this.reportOpen = true;
@@ -587,7 +591,7 @@ export class DiveScene extends Phaser.Scene {
       goldRail: true,
     });
     const eyebrow = this.add
-      .text(320, 250, i18n.t('dive.briefingEyebrow'), {
+      .text(420, 250, i18n.t('dive.briefingEyebrow'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: '#f0c95a',
@@ -2427,22 +2431,22 @@ export class DiveScene extends Phaser.Scene {
       );
       const feedback = add(
         this.add
-          .text(GAME_WIDTH / 2, 720, '', {
+          .text(GAME_WIDTH / 2, 690, '', {
             fontFamily: 'sans-serif',
-            fontSize: '26px',
+            fontSize: '24px',
             color: '#91e6a7',
             align: 'center',
-            wordWrap: { width: 900, useAdvancedWrap: true },
-            padding: { x: 18, y: 12 },
+            wordWrap: { width: 1080, useAdvancedWrap: true },
+            padding: { x: 16, y: 9 },
           })
           .setOrigin(0.5)
           .setDepth(3002),
       );
       const continueButton = new ResearchButton(
         this,
-        1160,
-        810,
-        390,
+        1270,
+        835,
+        360,
         66,
         i18n.t('report.continueChapter2'),
         { tone: 'primary', fontSize: 24, depth: 3004 },
@@ -2455,9 +2459,9 @@ export class DiveScene extends Phaser.Scene {
       add(continueButton.root);
       const voiceButton = new ResearchButton(
         this,
-        820,
-        810,
-        330,
+        780,
+        835,
+        300,
         66,
         i18n.t('report.aiVoiceReplay'),
         { tone: 'secondary', fontSize: 20, depth: 3004 },
@@ -2531,7 +2535,7 @@ export class DiveScene extends Phaser.Scene {
       });
       const back = add(
         this.add
-          .text(480, 810, i18n.t('common.backStep'), {
+          .text(400, 835, i18n.t('common.backStep'), {
             fontFamily: 'sans-serif',
             fontSize: '22px',
             color: Palette.textLight,
@@ -2741,7 +2745,7 @@ export class DiveScene extends Phaser.Scene {
     add(voiceButton.root);
     const playQuestionNarration = (automatic = false): void => {
       voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-      const accepted = this.playNarrationCue('report-do-question', narrationHighlight, {
+      const accepted = this.playNarrationCue('report-fish-gills-question-v2', narrationHighlight, {
         automatic,
         hideHighlightWhenIdle: true,
         onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),

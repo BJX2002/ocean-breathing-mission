@@ -71,7 +71,7 @@ export class TouchInputAdapter implements InputAdapter {
       .setScrollFactor(0)
       .setDepth(UI_DEPTH + 1);
     const joystickLabel = scene.add
-      .text(JOYSTICK_X, JOYSTICK_Y + 142, i18n.t('touch.joystick'), {
+      .text(JOYSTICK_X, JOYSTICK_Y + 92, i18n.t('touch.joystick'), {
         fontFamily: 'Arial, sans-serif',
         fontSize: '28px',
         color: '#d7f7ff',

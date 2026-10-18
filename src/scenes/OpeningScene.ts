@@ -124,6 +124,8 @@ export class OpeningScene extends Phaser.Scene {
     narrationService.resetAutomaticStarts();
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
     const diveDebugScreens = [
+      'briefing',
+      'recap',
       'report',
       'food-chain',
       'food-lesson',

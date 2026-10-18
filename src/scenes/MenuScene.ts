@@ -49,6 +49,8 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     const chapter1DebugScreens = new Set([
+      'briefing',
+      'recap',
       'archive',
       'photo-conclusion',
       'report',
@@ -73,6 +75,7 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     const chapter2DebugScreens = new Set([
+      'lab-intro',
       'evidence',
       'experiment',
       'unlock',

@@ -13,6 +13,7 @@ describe('iPad touch controls', () => {
     expect(touchSource).toContain('this.actionPressed || this.actionPointerId !== null');
     expect(touchSource).toContain('this.cancelPressed || this.cancelPointerId !== null');
     expect(touchSource).not.toContain('state.action = true');
+    expect(touchSource).toContain('JOYSTICK_Y + 92');
   });
 
   it('shows touch controls only for the touch control scheme', () => {

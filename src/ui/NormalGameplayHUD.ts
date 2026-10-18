@@ -333,7 +333,10 @@ export class NormalGameplayHUD {
     for (const keycap of this.movementKeycaps) keycap.setVisible(movement);
     for (const key of this.movementKeys) key.setVisible(movement);
 
-    const textX = PANEL_LEFT + (movement ? 300 : 176);
+    const keycapX = PANEL_LEFT + 126;
+    this.actionKeycap.setX(keycapX);
+    this.actionKey.setX(keycapX);
+    const textX = PANEL_LEFT + (movement ? 300 : 202);
     this.actionEnglish.setVisible(false).setX(textX);
     this.actionLabel
       .setX(textX)

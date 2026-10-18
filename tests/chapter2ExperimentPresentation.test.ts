@@ -41,13 +41,13 @@ describe('Chapter 2 experiment guidance and product reveal', () => {
     expect(experiment).toContain('coachPulse?.stop();');
   });
 
-  it('keeps the hands-on experiment silent and free of narration controls', () => {
-    expect(experiment).not.toContain('playNarration');
+  it('adds recorded replayable narration without browser speech synthesis', () => {
+    expect(experiment).toContain("'lab-experiment-guide'");
+    expect(experiment).toContain('this.addModalNarration(');
     expect(experiment).not.toContain('speakDoExplanation');
-    expect(experiment).not.toContain("i18n.t('lab.voiceReplay')");
     expect(experiment).not.toContain('SpeechSynthesisUtterance');
-    expect(zh['lab.voiceReplay']).toBe('再聽一次');
-    expect(en['lab.voiceReplay']).toBe('Play again');
+    expect(zh['report.aiVoiceReplay']).toBe('播放／重播 AI 語音');
+    expect(en['report.aiVoiceReplay']).toBe('Play / replay AI voice');
   });
 
   it('uses a balanced two-column unlock layout with a large product view', () => {
