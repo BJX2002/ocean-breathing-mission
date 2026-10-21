@@ -5,6 +5,7 @@ describe('visual QA screen routing', () => {
 
   it('routes Dive debug screens past the opening sequence', () => {
     for (const screen of [
+      'dive',
       'briefing',
       'recap',
       'report',

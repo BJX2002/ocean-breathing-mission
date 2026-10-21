@@ -3,7 +3,11 @@ import { GAME_HEIGHT, GAME_WIDTH, Palette, SceneKeys } from '../config/constants
 import { eventBus } from '../events/EventBus';
 import { i18n, type LocaleCode } from '../i18n/LocaleService';
 import { gameState } from '../state/GameState';
-import { experiencePreferences, type NarrationVoice } from '../state/ExperiencePreferences';
+import {
+  experiencePreferences,
+  type NarrationSpeed,
+  type NarrationVoice,
+} from '../state/ExperiencePreferences';
 import { isDebugEnabled } from '../debug/DebugOverlay';
 
 type MenuScreen = 'language' | 'title' | 'chapters';
@@ -49,6 +53,7 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     const chapter1DebugScreens = new Set([
+      'dive',
       'briefing',
       'recap',
       'archive',
@@ -229,11 +234,7 @@ export class MenuScene extends Phaser.Scene {
     }
   }
 
-  /**
-   * One choice controls both narration and on-screen copy. This keeps the
-   * launch screen legible for younger players while retaining the full setup
-   * panel for prototype/debug use.
-   */
+  /** Language and narration speed stay visible before the mission starts. */
   private createCornerLanguageSelector(): void {
     const options: ReadonlyArray<{
       readonly label: string;
@@ -285,17 +286,52 @@ export class MenuScene extends Phaser.Scene {
         this.scene.restart({ screen: 'title' } satisfies MenuSceneData);
       });
     });
+
+    const speedTop = 76;
+    this.add
+      .text(startX - 112, speedTop + 15, i18n.t('menu.speedCornerLabel'), {
+        fontFamily: 'monospace',
+        fontSize: '15px',
+        color: '#b8d4dd',
+        fontStyle: 'bold',
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(15);
+    const speeds: readonly NarrationSpeed[] = [0.85, 1, 1.2];
+    speeds.forEach((speed, index) => {
+      const selected = experiencePreferences.getNarrationSpeed() === speed;
+      const button = this.add
+        .text(startX + index * 142, speedTop, `${speed}×`, {
+          fontFamily: 'sans-serif',
+          fontSize: '16px',
+          color: selected ? '#ffffff' : '#b8d4dd',
+          backgroundColor: selected ? '#167f79' : '#092d40cc',
+          padding: { x: 18, y: 8 },
+          fontStyle: selected ? 'bold' : 'normal',
+        })
+        .setDepth(15)
+        .setInteractive({ useHandCursor: true });
+      button.on(Phaser.Input.Events.POINTER_OVER, () => button.setColor('#ffffff'));
+      button.on(Phaser.Input.Events.POINTER_OUT, () =>
+        button.setColor(selected ? '#ffffff' : '#b8d4dd'),
+      );
+      button.on(Phaser.Input.Events.POINTER_UP, () => {
+        experiencePreferences.setNarrationSpeed(speed);
+        experiencePreferences.confirm();
+        this.scene.restart({ screen: 'title' } satisfies MenuSceneData);
+      });
+    });
   }
 
   private createLanguageSetup(): void {
     const panel = this.add
-      .rectangle(GAME_WIDTH / 2, 540, 1500, 850, 0x041826, 0.96)
+      .rectangle(GAME_WIDTH / 2, 540, 1500, 920, 0x041826, 0.96)
       .setStrokeStyle(2, Palette.accent, 0.62)
       .setDepth(5);
-    this.add.rectangle(218, 540, 6, 784, 0xf0c95a, 0.9).setDepth(6);
+    this.add.rectangle(218, 540, 6, 854, 0xf0c95a, 0.9).setDepth(6);
 
     this.add
-      .text(GAME_WIDTH / 2, 154, i18n.t('menu.setupEyebrow'), {
+      .text(GAME_WIDTH / 2, 112, i18n.t('menu.setupEyebrow'), {
         fontFamily: 'monospace',
         fontSize: '17px',
         color: '#f0c95a',
@@ -305,7 +341,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
     this.add
-      .text(GAME_WIDTH / 2, 218, i18n.t('menu.setupTitle'), {
+      .text(GAME_WIDTH / 2, 164, i18n.t('menu.setupTitle'), {
         fontFamily: 'sans-serif',
         fontSize: '46px',
         color: Palette.textLight,
@@ -314,7 +350,7 @@ export class MenuScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(10);
     this.add
-      .text(GAME_WIDTH / 2, 284, i18n.t('menu.setupBody'), {
+      .text(GAME_WIDTH / 2, 220, i18n.t('menu.setupBody'), {
         fontFamily: 'sans-serif',
         fontSize: '19px',
         color: '#aac8d4',
@@ -324,10 +360,10 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(10);
-    this.add.rectangle(GAME_WIDTH / 2, 346, 1180, 2, Palette.accent, 0.24).setDepth(8);
+    this.add.rectangle(GAME_WIDTH / 2, 278, 1180, 2, Palette.accent, 0.24).setDepth(8);
 
     this.add
-      .text(350, 382, i18n.t('menu.voiceLabel'), {
+      .text(350, 304, i18n.t('menu.voiceLabel'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: Palette.accentText,
@@ -335,7 +371,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setDepth(10);
     this.add
-      .text(350, 416, i18n.t('menu.voiceHint'), {
+      .text(350, 336, i18n.t('menu.voiceHint'), {
         fontFamily: 'sans-serif',
         fontSize: '16px',
         color: Palette.textMuted,
@@ -349,14 +385,14 @@ export class MenuScene extends Phaser.Scene {
       ['eng', 'English\nNarration'],
     ];
     voiceChoices.forEach(([voice, label], index) => {
-      this.addChoiceButton(650 + index * 310, 500, 284, label, selectedVoice === voice, () => {
+      this.addChoiceButton(650 + index * 310, 412, 284, label, selectedVoice === voice, () => {
         experiencePreferences.setVoice(voice);
         this.scene.restart({ screen: 'language' } satisfies MenuSceneData);
       });
     });
 
     this.add
-      .text(350, 604, i18n.t('menu.textLabel'), {
+      .text(350, 492, i18n.t('menu.speedLabel'), {
         fontFamily: 'monospace',
         fontSize: '20px',
         color: Palette.accentText,
@@ -364,7 +400,43 @@ export class MenuScene extends Phaser.Scene {
       })
       .setDepth(10);
     this.add
-      .text(350, 638, i18n.t('menu.textHint'), {
+      .text(350, 524, i18n.t('menu.speedHint'), {
+        fontFamily: 'sans-serif',
+        fontSize: '16px',
+        color: Palette.textMuted,
+      })
+      .setDepth(10);
+
+    const speedChoices: ReadonlyArray<readonly [NarrationSpeed, string]> = [
+      [0.85, i18n.t('menu.speedSlow')],
+      [1, i18n.t('menu.speedNormal')],
+      [1.2, i18n.t('menu.speedFast')],
+    ];
+    speedChoices.forEach(([speed, label], index) => {
+      this.addChoiceButton(
+        650 + index * 310,
+        582,
+        284,
+        label,
+        experiencePreferences.getNarrationSpeed() === speed,
+        () => {
+          experiencePreferences.setNarrationSpeed(speed);
+          this.scene.restart({ screen: 'language' } satisfies MenuSceneData);
+        },
+        78,
+      );
+    });
+
+    this.add
+      .text(350, 654, i18n.t('menu.textLabel'), {
+        fontFamily: 'monospace',
+        fontSize: '20px',
+        color: Palette.accentText,
+        fontStyle: 'bold',
+      })
+      .setDepth(10);
+    this.add
+      .text(350, 686, i18n.t('menu.textHint'), {
         fontFamily: 'sans-serif',
         fontSize: '16px',
         color: Palette.textMuted,
@@ -377,13 +449,13 @@ export class MenuScene extends Phaser.Scene {
       ['en', 'English\nText'],
     ];
     localeChoices.forEach(([locale, label], index) => {
-      this.addChoiceButton(650 + index * 310, 720, 284, label, i18n.getLocale() === locale, () => {
+      this.addChoiceButton(650 + index * 310, 768, 284, label, i18n.getLocale() === locale, () => {
         i18n.setLocale(locale);
         this.scene.restart({ screen: 'language' } satisfies MenuSceneData);
       });
     });
 
-    this.addMenuButton(750, 884, 420, i18n.t('menu.confirmSetup'), true, () => {
+    this.addMenuButton(750, 944, 420, i18n.t('menu.confirmSetup'), true, () => {
       experiencePreferences.confirm();
       this.scene.restart({ screen: 'title' } satisfies MenuSceneData);
     });
@@ -575,9 +647,10 @@ export class MenuScene extends Phaser.Scene {
     label: string,
     selected: boolean,
     onClick: () => void,
+    height = 108,
   ): Phaser.GameObjects.Container {
     const background = this.add
-      .rectangle(0, 0, width, 108, selected ? 0x167f79 : 0x092d40, selected ? 1 : 0.92)
+      .rectangle(0, 0, width, height, selected ? 0x167f79 : 0x092d40, selected ? 1 : 0.92)
       .setStrokeStyle(2, selected ? 0xa4fff5 : 0x416f7f, selected ? 0.9 : 0.58)
       .setInteractive({ useHandCursor: true });
     const text = this.add
@@ -591,7 +664,7 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     const check = this.add
-      .text(width / 2 - 18, -54 + 13, selected ? '✓' : '', {
+      .text(width / 2 - 18, -height / 2 + 13, selected ? '✓' : '', {
         fontFamily: 'sans-serif',
         fontSize: '18px',
         color: '#d7fff8',

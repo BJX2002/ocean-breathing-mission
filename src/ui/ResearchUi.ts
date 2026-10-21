@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Palette } from '../config/constants';
+import { narrationService } from '../services/NarrationService';
 
 export type ResearchButtonTone = 'primary' | 'secondary' | 'locked' | 'danger';
 
@@ -56,6 +57,8 @@ export interface ResearchButtonOptions {
   readonly depth?: number;
   readonly radius?: number;
   readonly onPress?: () => void;
+  /** Keep false for answers/navigation so students cannot skip active narration. */
+  readonly allowDuringNarration?: boolean;
 }
 
 /** A reusable rounded button with hover/focus feedback and a stable hit area. */
@@ -68,6 +71,8 @@ export class ResearchButton {
   private readonly hitArea: Phaser.GameObjects.Rectangle;
   private pulseTween: Phaser.Tweens.Tween | null = null;
   private enabled = true;
+  private narrationPlaying = false;
+  private unsubscribePlayback: (() => void) | null = null;
   private tone: ResearchButtonTone;
 
   constructor(
@@ -98,11 +103,17 @@ export class ResearchButton {
       .rectangle(0, 0, width, height, 0xffffff, 0.001)
       .setInteractive({ useHandCursor: true });
     this.root.add([this.glow, this.background, this.label, this.hitArea]);
-    this.paint(false);
-    this.updatePulse();
+    this.unsubscribePlayback = narrationService.onPlaybackChange((playing) => {
+      this.narrationPlaying = playing;
+      this.syncEnabledState();
+    });
+    this.root.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.unsubscribePlayback?.();
+      this.unsubscribePlayback = null;
+    });
 
     this.hitArea.on(Phaser.Input.Events.POINTER_OVER, () => {
-      if (!this.enabled) return;
+      if (!this.isEffectivelyEnabled()) return;
       this.paint(true);
       this.root.setScale(1.018);
     });
@@ -111,10 +122,10 @@ export class ResearchButton {
       this.root.setScale(1);
     });
     this.hitArea.on(Phaser.Input.Events.POINTER_DOWN, () => {
-      if (this.enabled) this.root.setScale(0.985);
+      if (this.isEffectivelyEnabled()) this.root.setScale(0.985);
     });
     this.hitArea.on(Phaser.Input.Events.POINTER_UP, () => {
-      if (!this.enabled) return;
+      if (!this.isEffectivelyEnabled()) return;
       this.root.setScale(1.018);
       options.onPress?.();
     });
@@ -134,17 +145,13 @@ export class ResearchButton {
 
   public setEnabled(enabled: boolean): this {
     this.enabled = enabled;
-    this.root.setAlpha(enabled ? 1 : 0.64);
-    if (enabled) this.hitArea.setInteractive({ useHandCursor: true });
-    else this.hitArea.disableInteractive();
-    this.paint(false);
-    this.updatePulse();
+    this.syncEnabledState();
     return this;
   }
 
   public onPress(callback: () => void): this {
     this.hitArea.on(Phaser.Input.Events.POINTER_UP, () => {
-      if (this.enabled) callback();
+      if (this.isEffectivelyEnabled()) callback();
     });
     return this;
   }
@@ -172,7 +179,7 @@ export class ResearchButton {
     this.background.strokeRoundedRect(-this.width / 2, -this.height / 2, this.width, this.height, radius);
 
     this.glow.clear();
-    if (this.tone === 'primary' && this.enabled) {
+    if (this.tone === 'primary' && this.isEffectivelyEnabled()) {
       this.glow.lineStyle(5, 0xa4fff5, 0.72);
       this.glow.strokeRoundedRect(
         -this.width / 2 - 5,
@@ -189,7 +196,7 @@ export class ResearchButton {
     this.pulseTween?.stop();
     this.pulseTween = null;
     this.glow.setScale(1).setAlpha(0);
-    if (this.tone !== 'primary' || !this.enabled) return;
+    if (this.tone !== 'primary' || !this.isEffectivelyEnabled()) return;
 
     this.pulseTween = this.scene.tweens.add({
       targets: this.glow,
@@ -200,5 +207,20 @@ export class ResearchButton {
       repeat: -1,
       ease: 'Sine.InOut',
     });
+  }
+
+  private isEffectivelyEnabled(): boolean {
+    return (
+      this.enabled && (this.options.allowDuringNarration === true || !this.narrationPlaying)
+    );
+  }
+
+  private syncEnabledState(): void {
+    const enabled = this.isEffectivelyEnabled();
+    this.root.setAlpha(enabled ? 1 : 0.64);
+    if (enabled) this.hitArea.setInteractive({ useHandCursor: true });
+    else this.hitArea.disableInteractive();
+    this.paint(false);
+    this.updatePulse();
   }
 }

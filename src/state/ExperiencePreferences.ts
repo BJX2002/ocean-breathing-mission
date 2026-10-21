@@ -1,4 +1,5 @@
 export type NarrationVoice = 'can' | 'pth' | 'eng';
+export type NarrationSpeed = 0.85 | 1 | 1.2;
 
 /**
  * Choices made on the launch setup screen. They intentionally live outside
@@ -7,6 +8,7 @@ export type NarrationVoice = 'can' | 'pth' | 'eng';
  */
 class ExperiencePreferences {
   private voice: NarrationVoice = 'can';
+  private narrationSpeed: NarrationSpeed = 1;
   private configured = false;
 
   getVoice(): NarrationVoice {
@@ -15,6 +17,14 @@ class ExperiencePreferences {
 
   setVoice(voice: NarrationVoice): void {
     this.voice = voice;
+  }
+
+  getNarrationSpeed(): NarrationSpeed {
+    return this.narrationSpeed;
+  }
+
+  setNarrationSpeed(speed: NarrationSpeed): void {
+    this.narrationSpeed = speed;
   }
 
   isConfigured(): boolean {

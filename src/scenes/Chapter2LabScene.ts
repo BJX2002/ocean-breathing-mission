@@ -116,6 +116,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       'lab-compare-fixed',
       'lab-compare-sensor',
       'lab-deployment-guide',
+      'lab-deployment-result-review',
       'lab-summary-1',
       'lab-summary-2',
       'lab-summary-3',
@@ -2780,6 +2781,17 @@ export class Chapter2LabScene extends Phaser.Scene {
       )
       .setOrigin(0.5, 0);
     root.add([sidebarSurface, sidebarTitle, sidebarBody]);
+
+    if (!snapshot.success) {
+      this.addModalNarration(
+        root,
+        'lab-deployment-result-review',
+        { x: 1600, y: 630, width: 340, height: 350 },
+        1490,
+        930,
+        300,
+      );
+    }
 
     let activeCell: DeploymentCellRecord | null = null;
     const repairButton = new ResearchButton(

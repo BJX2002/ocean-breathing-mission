@@ -19,8 +19,8 @@
     "pth": "问题：鱼靠身体的哪个部位从水中取得氧气？A，鱼鳃。B，鱼鳞。",
     "eng": "Question: Which body part do fish use to take oxygen from water? A: Gills. B: Scales."
   },
-  "report-fish-gills-question-v2": {
-    "can": "魚也需要氧氣。看看小魚的鰓一開一合，水中的氧氣正往鰓的位置移動。題目：魚靠身體的哪個部位，從水中取得氧氣？選項：A，魚鰓。B，魚鱗。",
+  "report-fish-gills-question-v3": {
+    "can": "魚也需要氧氣。看看小魚頭部兩邊的魚腮，一開一合，從水中取得氧氣。題目：魚靠身體的哪個部位，從水中取得氧氣？選項：A，頭部兩邊的魚腮。B，魚鱗。",
     "pth": "鱼也需要氧气。看看小鱼的鳃一开一合，水中的氧气正往鳃的位置移动。题目：鱼靠身体的哪个部位，从水中取得氧气？选项：A，鱼鳃。B，鱼鳞。",
     "eng": "Fish need oxygen too. Watch the gills open and close as oxygen in the water moves toward them. Question: What do fish use to take oxygen from water? Options: A, gills. B, scales."
   },
@@ -44,10 +44,10 @@
     "pth": "问题三：今天的海洋生物比旧照片少，能直接证明低氧是唯一原因吗？A，不能，照片只能显示生物变少，不能证明唯一原因。B，能，生物变少一定只由低氧造成。",
     "eng": "Question three: Fewer marine organisms are visible today. Does that prove low oxygen is the only cause? A: No. The photo shows fewer organisms but cannot prove one cause. B: Yes. Fewer organisms can only mean low oxygen."
   },
-  "report-recap-4": {
-    "can": "問題四：如果小型魚明顯減少，食物網入面其他生物可能有咩變化？A，依賴佢哋嘅大型礁魚同其他生物都可能減少。B，只會影響小型魚，其他生物唔會改變。",
-    "pth": "问题四：如果小型鱼明显减少，食物网中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
-    "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food web? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
+  "report-recap-4-v2": {
+    "can": "問題四：如果小型魚明顯減少，食物鏈入面其他生物可能有咩變化？A，依賴佢哋嘅大型礁魚同其他生物都可能減少。B，只會影響小型魚，其他生物唔會改變。",
+    "pth": "问题四：如果小型鱼明显减少，食物链中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
+    "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food chain? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
   },
   "opening-photo-review": {
     "can": "步驟：點擊黃色光圈，搵出以前嘅海洋線索。提示：需要時可以拖動或者縮放相片；用左右箭嘴切換相片。",
@@ -69,10 +69,10 @@
     "pth": "食物链表示谁吃谁。能量从食物传给吃它的生物，所以箭头由食物指向取食者。请按照能量传递的顺序，把三张卡拖到上方空格。",
     "eng": "A food chain shows who eats whom. Energy moves from food to the organism that eats it, so arrows point from food to eater. Drag the three cards into the upper slots in energy-flow order."
   },
-  "report-food-web": {
-    "can": "拼好食物網。將四張魚類卡拖到正確嘅角色區，完成呢條食物鏈。",
-    "pth": "拼好食物网。把四张鱼类卡拖进正确角色区，完成这条食物链。",
-    "eng": "Build the food web. Drag the four fish cards into their correct roles to complete this food chain."
+  "report-food-chain-v2": {
+    "can": "拼好食物鏈。將四張魚類卡拖到正確嘅角色區，完成呢條食物鏈。",
+    "pth": "拼好食物链。把四张鱼类卡拖进正确角色区，完成这条食物链。",
+    "eng": "Build the food chain. Drag the four fish cards into their correct roles to complete it."
   },
   "lab-compare-manual": {
     "can": "船隻採樣一次可以調查同一地點三個深度，但每層只留低一個時刻嘅讀數，而且價錢最貴。",
@@ -119,6 +119,11 @@
     "pth": "第一步：选择本轮工具。成功条件有三项：九个点都有设备，九个点资料完整，而且不能超出预算。",
     "eng": "First, choose this round's tool. There are three success rules: equipment at all nine points, complete data at all nine points, and stay within budget."
   },
+  "lab-deployment-result-review": {
+    "can": "資料唔完整，調查未通過。本輪判讀：單次讀數只係一個時刻；斷線之後資料無法補回；超支或者有缺漏都唔通過。下一輪，試用另一種工具。",
+    "pth": "资料不完整，调查未通过。本轮判读：单次读数只是一个时刻；断线后资料无法补回；超支或缺漏都不通过。下一轮，试用另一种工具。",
+    "eng": "The data is incomplete, so the trial did not pass. Trial review: one reading captures only one moment; missing data after a disconnection cannot be recovered; and a trial fails if it exceeds the budget or leaves gaps. Try a different tool next round."
+  },
   "lab-summary-1": {
     "can": "第一，魚用鰓取得水中嘅溶解氧。食物鏈互相連接，一種生物改變，亦可能影響其他生物。",
     "pth": "第一，鱼用鳃取得水中的溶解氧。食物链互相连接，一种生物发生变化，也可能影响其他生物。",
@@ -139,8 +144,8 @@
     "pth": "恭喜你完成海洋呼吸调查！你从旧照片里找到变化，再用多个地点、多个深度和连续时间的监测网补足证据。今天真的有海洋学家和科学家使用传感器、船只与长期资料守护海洋。每一份可靠记录，都能帮助我们了解和保护海洋生态。把好奇心带回生活，一起留意并保护我们的海洋。",
     "eng": "Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean."
   },
-  "feedback-correct": {
-    "can": "答啱喇。",
+  "feedback-correct-v2": {
+    "can": "答對喇，做得好！",
     "pth": "答对了。",
     "eng": "Correct."
   },

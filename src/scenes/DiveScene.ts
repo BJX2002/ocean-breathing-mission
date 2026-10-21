@@ -46,6 +46,7 @@ const EDGE_MARGIN = 70;
 const VESSEL = { x: 650, y: WATER_SURFACE_Y };
 const DIVER_START = { x: VESSEL.x, y: WATER_SURFACE_Y + 170 };
 const REQUIRED_STATION_PHOTOS = 3;
+const DIRECT_DRAG_PICKUP_RADIUS = 150;
 
 interface ViewfinderPhotoSpec {
   readonly speciesId: string;
@@ -143,6 +144,9 @@ export class DiveScene extends Phaser.Scene {
   private foodWebNarrationHighlight: Phaser.GameObjects.Rectangle | null = null;
   private foodWebNarrationButton: ResearchButton | null = null;
   private doBridgeNarrationPlayed = false;
+  private directDragPointerId: number | null = null;
+  private directDragOffset = new Phaser.Math.Vector2();
+  private directDragTarget: Phaser.Math.Vector2 | null = null;
 
   private readonly onDepleted = (payload: GameEventMap['oxygen:depleted']): void => {
     if (this.viewfinderOpen) this.closeViewfinder();
@@ -189,6 +193,46 @@ export class DiveScene extends Phaser.Scene {
     this.scene.start(SceneKeys.Menu);
   };
 
+  private readonly onDirectDragStart = (pointer: Phaser.Input.Pointer): void => {
+    if (
+      !this.inputManager.usesTouchControls() ||
+      this.paused ||
+      this.reportOpen ||
+      this.viewfinderOpen ||
+      this.oxygen.isDepleted ||
+      this.directDragPointerId !== null ||
+      this.inputManager.isTouchControlPoint(pointer.x, pointer.y)
+    ) {
+      return;
+    }
+    const position = this.diver.getPosition();
+    if (
+      Phaser.Math.Distance.Between(pointer.worldX, pointer.worldY, position.x, position.y) >
+      DIRECT_DRAG_PICKUP_RADIUS
+    ) {
+      return;
+    }
+    this.directDragPointerId = pointer.id;
+    this.directDragOffset.set(position.x - pointer.worldX, position.y - pointer.worldY);
+    this.directDragTarget = new Phaser.Math.Vector2(position.x, position.y);
+    this.diver.stopMovement();
+  };
+
+  private readonly onDirectDragMove = (pointer: Phaser.Input.Pointer): void => {
+    if (pointer.id !== this.directDragPointerId) return;
+    this.directDragTarget = new Phaser.Math.Vector2(
+      pointer.worldX + this.directDragOffset.x,
+      pointer.worldY + this.directDragOffset.y,
+    );
+  };
+
+  private readonly onDirectDragEnd = (pointer: Phaser.Input.Pointer): void => {
+    if (pointer.id !== this.directDragPointerId) return;
+    this.directDragPointerId = null;
+    this.directDragTarget = null;
+    this.diver.stopMovement();
+  };
+
   constructor() {
     super(SceneKeys.Dive);
   }
@@ -210,20 +254,23 @@ export class DiveScene extends Phaser.Scene {
     this.observedSpecies.clear();
     this.pendingObservationReview = null;
     this.doBridgeNarrationPlayed = false;
+    this.directDragPointerId = null;
+    this.directDragTarget = null;
+    this.directDragOffset.set(0, 0);
     narrationService.preload([
       'dive-mission-brief',
       'report-today-gallery',
       'report-compare-1',
       'report-compare-2',
       'report-food-lesson',
-      'report-food-web',
-      'report-fish-gills-question-v2',
+      'report-food-chain-v2',
+      'report-fish-gills-question-v3',
       'report-do-bridge',
       'report-recap-1',
       'report-recap-2',
       'report-recap-3',
-      'report-recap-4',
-      'feedback-correct',
+      'report-recap-4-v2',
+      'feedback-correct-v2',
       'feedback-try-again',
     ]);
     eventBus.emit('scene:changed', { sceneKey: SceneKeys.Dive });
@@ -259,6 +306,10 @@ export class DiveScene extends Phaser.Scene {
     this.oxygen = new OxygenSystem(this.mission?.id ?? 'unknown', budget);
 
     this.inputManager = new InputManager(this);
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onDirectDragStart);
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onDirectDragMove);
+    this.input.on(Phaser.Input.Events.POINTER_UP, this.onDirectDragEnd);
+    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onDirectDragEnd);
     this.viewfinderKey = this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE) ?? null;
     this.observationReviewKey =
       this.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.I) ?? null;
@@ -345,8 +396,24 @@ export class DiveScene extends Phaser.Scene {
     }
 
     if (!this.oxygen.isDepleted) {
-      this.diver.update(delta, input, this.bounds);
-      this.oxygen.update(delta, this.diver.isMoving);
+      let draggedThisFrame = false;
+      if (this.directDragPointerId !== null) {
+        const target = this.directDragTarget;
+        this.directDragTarget = null;
+        if (target !== null) {
+          const before = this.diver.getPosition();
+          this.diver.setPosition(
+            Phaser.Math.Clamp(target.x, this.bounds.left, this.bounds.right),
+            Phaser.Math.Clamp(target.y, this.bounds.top, this.bounds.bottom),
+          );
+          const after = this.diver.getPosition();
+          draggedThisFrame =
+            Phaser.Math.Distance.Between(before.x, before.y, after.x, after.y) > 0.5;
+        }
+      } else {
+        this.diver.update(delta, input, this.bounds);
+      }
+      this.oxygen.update(delta, draggedThisFrame || this.diver.isMoving);
       this.updateOxygenGuidance();
       const pos = this.diver.getPosition();
       this.mapView?.update(pos.x, pos.y);
@@ -386,6 +453,7 @@ export class DiveScene extends Phaser.Scene {
    */
   private applyDebugScreenRequest(map: DiveMap): boolean {
     const requested = new URLSearchParams(window.location.search).get('screen');
+    if (requested === 'dive') return true;
     if (requested === 'briefing') {
       this.time.delayedCall(80, () => this.showMissionBriefing());
       return true;
@@ -1372,6 +1440,7 @@ export class DiveScene extends Phaser.Scene {
     continueButton = button;
     this.foodWebNarrationButton.onPress(() => this.playFoodWebNarration(false));
     button.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (narrationService.isPlaying()) return;
       if (!foodWebComplete) {
         button.setText(i18n.t('report.foodWebLocked'));
         return;
@@ -1674,7 +1743,7 @@ export class DiveScene extends Phaser.Scene {
             button.setTone(correct ? 'primary' : 'danger');
             feedback.setText(i18n.t(correct ? 'report.compareCorrect' : 'report.compareTryAgain'));
             this.playNarrationCue(
-              correct ? 'feedback-correct' : 'feedback-try-again',
+              correct ? 'feedback-correct-v2' : 'feedback-try-again',
               button.root,
               { hideHighlightWhenIdle: false },
             );
@@ -2362,7 +2431,7 @@ export class DiveScene extends Phaser.Scene {
         'report-recap-1',
         'report-recap-2',
         'report-recap-3',
-        'report-recap-4',
+        'report-recap-4-v2',
       ] as const;
       const activeQuestionCue = questionCue[index] ?? 'report-recap-1';
       add(
@@ -2505,9 +2574,13 @@ export class DiveScene extends Phaser.Scene {
             .setColor(correct ? '#d8fffb' : '#fff3b0')
             .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
             .setText(i18n.t(feedbackKey));
-          this.playNarrationCue(correct ? 'feedback-correct' : 'feedback-try-again', button.root, {
-            hideHighlightWhenIdle: false,
-          });
+          this.playNarrationCue(
+            correct ? 'feedback-correct-v2' : 'feedback-try-again',
+            button.root,
+            {
+              hideHighlightWhenIdle: false,
+            },
+          );
           if (!correct) {
             this.tweens.add({
               targets: button.root,
@@ -2715,7 +2788,7 @@ export class DiveScene extends Phaser.Scene {
           i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
         );
         this.playNarrationCue(
-          choice.correct ? 'feedback-correct' : 'feedback-try-again',
+          choice.correct ? 'feedback-correct-v2' : 'feedback-try-again',
           button.root,
           { hideHighlightWhenIdle: false },
         );
@@ -2745,7 +2818,7 @@ export class DiveScene extends Phaser.Scene {
     add(voiceButton.root);
     const playQuestionNarration = (automatic = false): void => {
       voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-      const accepted = this.playNarrationCue('report-fish-gills-question-v2', narrationHighlight, {
+      const accepted = this.playNarrationCue('report-fish-gills-question-v3', narrationHighlight, {
         automatic,
         hideHighlightWhenIdle: true,
         onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
@@ -3279,12 +3352,12 @@ export class DiveScene extends Phaser.Scene {
       en: {
         role: 'observed marine organism',
         behavior: 'its behavior needs repeated observations',
-        chain: 'habitat → observed organism → wider food web',
+        chain: 'habitat → observed organism → wider food chain',
       },
       zh: {
         role: '被觀察到的海洋生物',
         behavior: '需要透過多次觀察了解行為',
-        chain: '棲地 → 觀察到的生物 → 更大的食物網',
+        chain: '棲地 → 觀察到的生物 → 更大的食物鏈',
       },
     };
     return english ? selected.en : selected.zh;
@@ -3294,8 +3367,8 @@ export class DiveScene extends Phaser.Scene {
     const english = i18n.getLocale() === 'en';
     if (index === 0)
       return english
-        ? 'energy or organic matter enters the local food web here'
-        : '能量或有機物從這個環節進入當地食物網';
+        ? 'energy or organic matter enters the local food chain here'
+        : '能量或有機物從這個環節進入當地食物鏈';
     if (index === 1)
       return english
         ? `${label} is the organism observed in this field note`
@@ -4692,7 +4765,7 @@ export class DiveScene extends Phaser.Scene {
     const button = this.foodWebNarrationButton;
     if (highlight === null || button === null) return;
     button.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-    const accepted = this.playNarrationCue('report-food-web', highlight, {
+    const accepted = this.playNarrationCue('report-food-chain-v2', highlight, {
       automatic,
       hideHighlightWhenIdle: true,
       onComplete: () => button.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
@@ -4724,6 +4797,10 @@ export class DiveScene extends Phaser.Scene {
     eventBus.off('subject:discovered', this.onSubjectDiscovered);
     eventBus.off('subject:infoRequested', this.onSubjectInfoRequested);
     this.input.keyboard?.off('keydown-ESC', this.onEscape, this);
+    this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onDirectDragStart);
+    this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onDirectDragMove);
+    this.input.off(Phaser.Input.Events.POINTER_UP, this.onDirectDragEnd);
+    this.input.off(Phaser.Input.Events.POINTER_UP_OUTSIDE, this.onDirectDragEnd);
     this.viewfinderKey?.destroy();
     this.observationReviewKey?.destroy();
     this.closeViewfinder();

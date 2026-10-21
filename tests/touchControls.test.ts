@@ -13,7 +13,20 @@ describe('iPad touch controls', () => {
     expect(touchSource).toContain('this.actionPressed || this.actionPointerId !== null');
     expect(touchSource).toContain('this.cancelPressed || this.cancelPointerId !== null');
     expect(touchSource).not.toContain('state.action = true');
-    expect(touchSource).toContain('JOYSTICK_Y + 92');
+    expect(touchSource).toContain('JOYSTICK_Y + 145');
+    expect(touchSource).toContain("label: '↑'");
+    expect(touchSource).toContain("label: '↓'");
+    expect(touchSource).toContain("label: '←'");
+    expect(touchSource).toContain("label: '→'");
+  });
+
+  it('lets iPad players drag the diver directly without stealing HUD touches', () => {
+    expect(diveSource).toContain('private directDragPointerId: number | null = null');
+    expect(diveSource).toContain('this.onDirectDragStart');
+    expect(diveSource).toContain('this.onDirectDragMove');
+    expect(diveSource).toContain('this.onDirectDragEnd');
+    expect(diveSource).toContain('this.inputManager.isTouchControlPoint(pointer.x, pointer.y)');
+    expect(managerSource).toContain('isTouchControlPoint');
   });
 
   it('shows touch controls only for the touch control scheme', () => {
