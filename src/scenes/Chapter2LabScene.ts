@@ -107,10 +107,16 @@ export class Chapter2LabScene extends Phaser.Scene {
   preload(): void {
     queueSceneArt(this, CHAPTER2_ART_MANIFEST);
     narrationService.preload([
+      'lab-intro-guide',
+      'lab-evidence-guide',
+      'lab-experiment-guide',
+      'lab-final-quiz-1',
+      'lab-final-quiz-2',
       'lab-compare-manual',
       'lab-compare-fixed',
       'lab-compare-sensor',
       'lab-deployment-guide',
+      'lab-deployment-result-review',
       'lab-summary-1',
       'lab-summary-2',
       'lab-summary-3',
@@ -144,6 +150,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const requested = new URLSearchParams(window.location.search).get('screen');
     if (requested === null) return;
     this.time.delayedCall(120, () => {
+      if (requested === 'lab-intro') return;
       this.closeModal();
       if (requested === 'evidence') {
         this.showEvidenceModal();
@@ -921,9 +928,9 @@ export class Chapter2LabScene extends Phaser.Scene {
 
     const recordButton = this.addModalButton(
       root,
-      960,
+      1340,
       956,
-      420,
+      360,
       i18n.t('lab.evidenceRecord'),
       true,
       () => {
@@ -934,9 +941,17 @@ export class Chapter2LabScene extends Phaser.Scene {
         this.targetX = 960;
       },
     );
-    this.addModalButton(root, 360, 956, 280, i18n.t('common.backStep'), false, () => {
+    this.addModalButton(root, 380, 956, 260, i18n.t('common.backStep'), false, () => {
       this.closeModal();
     });
+    this.addModalNarration(
+      root,
+      'lab-evidence-guide',
+      { x: 960, y: 600, width: 1540, height: 600 },
+      880,
+      956,
+      320,
+    );
     refresh();
   }
 
@@ -987,14 +1002,22 @@ export class Chapter2LabScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     root.add(controls);
-    this.addModalButton(root, 1060, 836, 460, i18n.t('lab.introStart'), true, () => {
+    this.addModalButton(root, 1320, 836, 430, i18n.t('lab.introStart'), true, () => {
       this.closeModal();
       this.targetX = 300;
       this.pendingInteractionZoneId = 'evidence';
     });
-    this.addModalButton(root, 520, 836, 290, i18n.t('common.backStep'), false, () => {
+    this.addModalButton(root, 400, 836, 250, i18n.t('common.backStep'), false, () => {
       this.scene.start(SceneKeys.Menu, { screen: 'chapters' });
     });
+    this.addModalNarration(
+      root,
+      'lab-intro-guide',
+      { x: 960, y: 560, width: 1200, height: 460 },
+      850,
+      836,
+      300,
+    );
   }
 
   private showExperimentModal(): void {
@@ -1269,6 +1292,14 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalButton(root, 340, 920, 280, i18n.t('common.backStep'), false, () => {
       this.closeModal();
     });
+    this.addModalNarration(
+      root,
+      'lab-experiment-guide',
+      { x: 960, y: 570, width: 1500, height: 590 },
+      1510,
+      920,
+      320,
+    );
 
     const onDrag = (
       _pointer: Phaser.Input.Pointer,
@@ -2751,6 +2782,17 @@ export class Chapter2LabScene extends Phaser.Scene {
       .setOrigin(0.5, 0);
     root.add([sidebarSurface, sidebarTitle, sidebarBody]);
 
+    if (!snapshot.success) {
+      this.addModalNarration(
+        root,
+        'lab-deployment-result-review',
+        { x: 1600, y: 630, width: 340, height: 350 },
+        1490,
+        930,
+        300,
+      );
+    }
+
     let activeCell: DeploymentCellRecord | null = null;
     const repairButton = new ResearchButton(
       this,
@@ -3215,18 +3257,26 @@ export class Chapter2LabScene extends Phaser.Scene {
       root.add(button.root);
     });
 
-    this.addModalButton(root, 520, 870, 300, i18n.t('common.backStep'), false, () =>
+    this.addModalButton(root, 400, 870, 260, i18n.t('common.backStep'), false, () =>
       this.showLearningSummary(),
     );
     finishButton = this.addModalButton(
       root,
-      1180,
+      1320,
       870,
-      370,
+      340,
       i18n.t('lab.finalQuizNext'),
       true,
       () => this.showFinalQuizSensorQuestion(),
     ).setVisible(false);
+    this.addModalNarration(
+      root,
+      'lab-final-quiz-1',
+      { x: 960, y: 590, width: 1340, height: 380 },
+      850,
+      870,
+      300,
+    );
   }
 
   private showFinalQuizSensorQuestion(): void {
@@ -3315,18 +3365,26 @@ export class Chapter2LabScene extends Phaser.Scene {
       root.add(button.root);
     });
 
-    this.addModalButton(root, 520, 870, 300, i18n.t('common.backStep'), false, () =>
+    this.addModalButton(root, 400, 870, 260, i18n.t('common.backStep'), false, () =>
       this.showFinalQuiz(),
     );
     finishButton = this.addModalButton(
       root,
-      1180,
+      1320,
       870,
-      370,
+      340,
       i18n.t('lab.finalQuizFinish'),
       true,
       () => this.showMissionCelebration(),
     ).setVisible(false);
+    this.addModalNarration(
+      root,
+      'lab-final-quiz-2',
+      { x: 960, y: 590, width: 1340, height: 380 },
+      850,
+      870,
+      300,
+    );
   }
 
   private showMissionCelebration(): void {
@@ -3608,6 +3666,85 @@ export class Chapter2LabScene extends Phaser.Scene {
     button.onPress(onClick);
     root.add(button.root);
     return button.root;
+  }
+
+  /** Attach recorded narration, a replay button and a non-obscuring pulse to a modal. */
+  private addModalNarration(
+    root: Phaser.GameObjects.Container,
+    cue: NarrationCueId,
+    bounds: {
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+    },
+    buttonX: number,
+    buttonY: number,
+    buttonWidth = 320,
+  ): Phaser.GameObjects.Container {
+    const highlight = this.add
+      .rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0xf0c95a, 0.018)
+      .setStrokeStyle(4, Palette.gold, 0.82)
+      .setVisible(false);
+    root.addAt(highlight, Math.min(2, root.list.length));
+
+    const voiceButton = new ResearchButton(
+      this,
+      buttonX,
+      buttonY,
+      buttonWidth,
+      64,
+      i18n.t('report.aiVoiceReplay'),
+      { tone: 'secondary', fontSize: 20 },
+    );
+    root.add(voiceButton.root);
+
+    const stopHighlight = (): void => {
+      this.tweens.killTweensOf(highlight);
+      if (highlight.active) highlight.setVisible(false).setAlpha(1);
+    };
+    const setReady = (key = 'report.aiVoiceReplay'): void => {
+      if (this.modalRoot !== root || !voiceButton.root.active) return;
+      voiceButton.setText(i18n.t(key)).setEnabled(true);
+    };
+    const play = (automatic = false): void => {
+      if (this.modalRoot !== root) return;
+      voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
+      const accepted = narrationService.play(cue, {
+        automatic,
+        onStart: () => {
+          if (this.modalRoot !== root || !highlight.active) return;
+          highlight.setVisible(true).setAlpha(0.34);
+          this.tweens.add({
+            targets: highlight,
+            alpha: { from: 0.34, to: 1 },
+            duration: 520,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.InOut',
+          });
+        },
+        onComplete: () => {
+          stopHighlight();
+          setReady();
+        },
+        onError: () => {
+          stopHighlight();
+          setReady('report.aiVoiceRetry');
+        },
+        onStop: () => {
+          stopHighlight();
+          setReady();
+        },
+      });
+      if (!accepted) setReady();
+    };
+    voiceButton.onPress(() => play(false));
+    play(true);
+    root.once('destroy', () => {
+      stopHighlight();
+    });
+    return voiceButton.root;
   }
 
   private closeModal(): void {

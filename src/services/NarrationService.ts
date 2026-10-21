@@ -23,6 +23,7 @@ class NarrationService {
   private currentStopCallback: (() => void) | null = null;
   private readonly automaticStarts = new Set<NarrationCueId>();
   private readonly preloadedAudio = new Map<string, HTMLAudioElement>();
+  private readonly playbackListeners = new Set<(playing: boolean) => void>();
 
   preload(cues: readonly NarrationCueId[]): void {
     if (typeof window === 'undefined' || typeof window.Audio === 'undefined') return;
@@ -54,6 +55,7 @@ class NarrationService {
   }
 
   stop(): void {
+    const wasPlaying = this.isPlaying();
     const onStop = this.currentStopCallback;
     this.currentStopCallback = null;
     if (this.currentAudio !== null) {
@@ -67,10 +69,17 @@ class NarrationService {
       this.currentUtterance = null;
     }
     onStop?.();
+    if (wasPlaying) this.notifyPlaybackChange();
   }
 
   isPlaying(): boolean {
     return this.currentAudio !== null || this.currentUtterance !== null;
+  }
+
+  onPlaybackChange(listener: (playing: boolean) => void): () => void {
+    this.playbackListeners.add(listener);
+    listener(this.isPlaying());
+    return () => this.playbackListeners.delete(listener);
   }
 
   private playRecordedAudio(
@@ -84,6 +93,7 @@ class NarrationService {
       cached === undefined ? new window.Audio(url) : (cached.cloneNode(true) as HTMLAudioElement);
     audio.preload = 'auto';
     audio.setAttribute('playsinline', '');
+    audio.playbackRate = experiencePreferences.getNarrationSpeed();
     let started = false;
     let finished = false;
     const finish = (success: boolean): void => {
@@ -92,6 +102,7 @@ class NarrationService {
       if (this.currentAudio === audio) {
         this.currentAudio = null;
         this.currentStopCallback = null;
+        this.notifyPlaybackChange();
       }
       if (success) callbacks.onComplete?.();
       else callbacks.onError?.();
@@ -113,6 +124,7 @@ class NarrationService {
         if (this.currentAudio === audio) {
           this.currentAudio = null;
           this.currentStopCallback = null;
+          this.notifyPlaybackChange();
         }
         if (!this.playSpeechFallback(cue, voice, callbacks, started)) finish(false);
       },
@@ -120,6 +132,7 @@ class NarrationService {
     );
     this.currentAudio = audio;
     this.currentStopCallback = callbacks.onStop ?? null;
+    this.notifyPlaybackChange();
     void audio.play().catch(() => finish(false));
     return true;
   }
@@ -145,11 +158,12 @@ class NarrationService {
     if (availableVoices.length > 0 && matchingVoice === undefined) return false;
     const utterance = new SpeechSynthesisUtterance(narrationCues[cue][voice]);
     utterance.lang = language;
-    utterance.rate = 1;
+    utterance.rate = experiencePreferences.getNarrationSpeed();
     utterance.pitch = 1;
     if (matchingVoice !== undefined) utterance.voice = matchingVoice;
     this.currentUtterance = utterance;
     this.currentStopCallback = callbacks.onStop ?? null;
+    this.notifyPlaybackChange();
     utterance.onstart = () => {
       if (callbacks.automatic === true) this.automaticStarts.add(cue);
       if (!alreadyStarted) callbacks.onStart?.();
@@ -158,12 +172,14 @@ class NarrationService {
       if (this.currentUtterance !== utterance) return;
       this.currentUtterance = null;
       this.currentStopCallback = null;
+      this.notifyPlaybackChange();
       callbacks.onComplete?.();
     };
     utterance.onerror = () => {
       if (this.currentUtterance !== utterance) return;
       this.currentUtterance = null;
       this.currentStopCallback = null;
+      this.notifyPlaybackChange();
       callbacks.onError?.();
     };
     window.speechSynthesis.cancel();
@@ -175,6 +191,11 @@ class NarrationService {
   private audioUrl(cue: NarrationCueId, voice: NarrationVoice): string {
     const base = typeof document === 'undefined' ? './' : document.baseURI;
     return new URL(`audio/narration/${voice}/${cue}.mp3`, base).href;
+  }
+
+  private notifyPlaybackChange(): void {
+    const playing = this.isPlaying();
+    for (const listener of this.playbackListeners) listener(playing);
   }
 }
 

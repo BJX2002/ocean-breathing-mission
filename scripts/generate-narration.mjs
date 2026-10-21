@@ -114,13 +114,28 @@ async function generateOne(apiKey, cueId, voice, text) {
 }
 
 const cues = JSON.parse(await readFile(cuePath, 'utf8'));
-const startCue = process.argv[2];
-const cueEntries = Object.entries(cues);
-const startIndex = startCue === undefined ? 0 : cueEntries.findIndex(([cueId]) => cueId === startCue);
+const argumentsAfterScript = process.argv.slice(2);
+const onlyIndex = argumentsAfterScript.indexOf('--only');
+const requestedCueIds =
+  onlyIndex < 0
+    ? []
+    : argumentsAfterScript.slice(onlyIndex + 1).filter((value) => value.length > 0);
+const allCueEntries = Object.entries(cues);
+const startCue = onlyIndex < 0 ? argumentsAfterScript[0] : undefined;
+const startIndex =
+  startCue === undefined ? 0 : allCueEntries.findIndex(([cueId]) => cueId === startCue);
 if (startCue !== undefined && startIndex < 0) throw new Error(`Unknown narration cue: ${startCue}`);
+const cueEntries =
+  requestedCueIds.length === 0
+    ? allCueEntries.slice(Math.max(0, startIndex))
+    : requestedCueIds.map((cueId) => {
+        const scripts = cues[cueId];
+        if (scripts === undefined) throw new Error(`Unknown narration cue: ${cueId}`);
+        return [cueId, scripts];
+      });
 const apiKey = provider === 'openai' ? await loadApiKey() : '';
 if (provider === 'openai' && !apiKey) throw new Error('OPENAI_API_KEY is not configured.');
-for (const [cueId, scripts] of cueEntries.slice(Math.max(0, startIndex))) {
+for (const [cueId, scripts] of cueEntries) {
   for (const voice of ['can', 'pth', 'eng']) {
     if (provider === 'openai') await generateOne(apiKey, cueId, voice, scripts[voice]);
     else await generateWithEdge(cueId, voice, scripts[voice]);

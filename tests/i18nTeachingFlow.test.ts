@@ -71,10 +71,10 @@ describe('teaching-flow copy', () => {
     expect(en['report.recapTryAgain']).toContain('Choose again');
   });
 
-  it('connects the food web and DO evidence in the final Chapter 1 recap', () => {
-    expect(zhHant['report.recap.q4']).toContain('食物網');
+  it('connects the food chain and DO evidence in the final Chapter 1 recap', () => {
+    expect(zhHant['report.recap.q4']).toContain('食物鏈');
     expect(zhHant['report.recapFoodWebOutcome']).toMatch(/食物鏈.*低氧.*DO/);
-    expect(en['report.recap.q4']).toContain('food web');
+    expect(en['report.recap.q4']).toContain('food chain');
     expect(en['report.recapFoodWebOutcome']).toMatch(/food chain.*Low DO/i);
   });
 

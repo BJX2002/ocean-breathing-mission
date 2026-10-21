@@ -124,6 +124,9 @@ export class OpeningScene extends Phaser.Scene {
     narrationService.resetAutomaticStarts();
     const requestedScreen = new URLSearchParams(window.location.search).get('screen');
     const diveDebugScreens = [
+      'dive',
+      'briefing',
+      'recap',
       'report',
       'food-chain',
       'food-lesson',
@@ -694,6 +697,7 @@ export class OpeningScene extends Phaser.Scene {
       );
       tab.setFontSize(24).setPadding(26, 14, 26, 14);
       tab.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (narrationService.isPlaying()) return;
         this.photoIndex = index;
         this.photoZoom = 1;
         this.photoYaw = 0;
@@ -703,12 +707,18 @@ export class OpeningScene extends Phaser.Scene {
     }
 
     const previous = this.addButton(180, viewportY, '‹', false);
-    previous.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => this.changePhoto(-1));
+    previous.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => {
+      if (!narrationService.isPlaying()) this.changePhoto(-1);
+    });
     const next = this.addButton(1280, viewportY, '›', false);
-    next.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => this.changePhoto(1));
+    next.setFontSize(42).on(Phaser.Input.Events.POINTER_UP, () => {
+      if (!narrationService.isPlaying()) this.changePhoto(1);
+    });
     const reset = this.addButton(1290, GAME_HEIGHT - 70, i18n.t('opening.photoReset'), false);
     reset.setFontSize(24).setPadding(26, 14, 26, 14);
-    reset.on(Phaser.Input.Events.POINTER_UP, () => this.resetPhotoView());
+    reset.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (!narrationService.isPlaying()) this.resetPhotoView();
+    });
 
     const allPhotosReviewed = this.areAllPhotoLocationsReviewed();
     const readyToFinish = this.photoIndex === PHOTO_KEYS.length - 1 && allPhotosReviewed;
@@ -746,6 +756,7 @@ export class OpeningScene extends Phaser.Scene {
       });
     }
     continueButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (narrationService.isPlaying()) return;
       const currentHotspots = PHOTO_HOTSPOTS[this.photoIndex] ?? [];
       const hasObservedClue = currentHotspots.some((hotspot) =>
         this.photoHotspotFound.has(`${this.photoIndex}:${hotspot.id}`),
@@ -772,6 +783,7 @@ export class OpeningScene extends Phaser.Scene {
     const backButton = this.addButton(112, GAME_HEIGHT - 70, i18n.t('common.backStep'), false);
     backButton.setFontSize(24).setPadding(26, 14, 26, 14);
     backButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (narrationService.isPlaying()) return;
       this.photoHotspotFound.clear();
       this.photoIndex = 0;
       this.photoZoom = 1;
@@ -895,7 +907,7 @@ export class OpeningScene extends Phaser.Scene {
       const choiceText = this.add
         .text(centerX, centerY, `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`, {
           fontFamily: 'sans-serif',
-          fontSize: touchLayout ? '36px' : '31px',
+          fontSize: touchLayout ? '32px' : '31px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',
@@ -912,6 +924,7 @@ export class OpeningScene extends Phaser.Scene {
         card.setFillStyle(0x123c50, 1).setStrokeStyle(3, 0x62b7bd, 0.65);
       });
       card.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (narrationService.isPlaying()) return;
         card
           .setFillStyle(choice.correct ? 0x176456 : 0x704138, 1)
           .setStrokeStyle(3, choice.correct ? 0x91e6a7 : 0xffb09d, 1);
@@ -922,7 +935,7 @@ export class OpeningScene extends Phaser.Scene {
             ),
           )
           .setColor(choice.correct ? '#91e6a7' : '#ffb09d');
-        narrationService.play(choice.correct ? 'feedback-correct' : 'feedback-try-again');
+        narrationService.play(choice.correct ? 'feedback-correct-v2' : 'feedback-try-again');
         continueButton?.setVisible(choice.correct);
         if (choice.correct && continueButton !== null) this.pulseTextButton(continueButton);
       });
@@ -935,6 +948,7 @@ export class OpeningScene extends Phaser.Scene {
     ).setVisible(false);
     continueButton.setFontSize(30).setPadding(44, 19, 44, 19);
     continueButton.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (narrationService.isPlaying()) return;
       this.stage = 'op02';
       this.startWithNarration = true;
       this.renderStage();
@@ -942,6 +956,7 @@ export class OpeningScene extends Phaser.Scene {
     const back = this.addButton(330, 835, i18n.t('common.backStep'), false);
     back.setFontSize(25).setPadding(28, 15, 28, 15);
     back.on(Phaser.Input.Events.POINTER_UP, () => {
+      if (narrationService.isPlaying()) return;
       this.photoIndex = PHOTO_KEYS.length - 1;
       this.stage = 'photoReview';
       this.renderStage();

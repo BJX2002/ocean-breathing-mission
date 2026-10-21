@@ -51,6 +51,10 @@ export class InputManager {
     this.touchAdapter?.setCancelVisible(visible);
   }
 
+  isTouchControlPoint(x: number, y: number): boolean {
+    return this.touchAdapter?.containsControlPoint(x, y) ?? false;
+  }
+
   destroy(): void {
     for (const adapter of this.adapters) {
       adapter.destroy();

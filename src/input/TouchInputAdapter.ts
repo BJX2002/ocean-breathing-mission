@@ -11,6 +11,7 @@ const ACTION_Y = 860;
 const CANCEL_X = 1740;
 const CANCEL_Y = 650;
 const UI_DEPTH = 5200;
+const CONTROL_HIT_PADDING = 16;
 
 /**
  * Two-thumb tablet controls. Movement and action use separate pointer IDs so
@@ -71,7 +72,7 @@ export class TouchInputAdapter implements InputAdapter {
       .setScrollFactor(0)
       .setDepth(UI_DEPTH + 1);
     const joystickLabel = scene.add
-      .text(JOYSTICK_X, JOYSTICK_Y + 142, i18n.t('touch.joystick'), {
+      .text(JOYSTICK_X, JOYSTICK_Y + 145, i18n.t('touch.joystick'), {
         fontFamily: 'Arial, sans-serif',
         fontSize: '28px',
         color: '#d7f7ff',
@@ -81,6 +82,24 @@ export class TouchInputAdapter implements InputAdapter {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(UI_DEPTH + 1);
+    const joystickArrows = [
+      { x: JOYSTICK_X, y: JOYSTICK_Y - 83, label: '↑' },
+      { x: JOYSTICK_X, y: JOYSTICK_Y + 83, label: '↓' },
+      { x: JOYSTICK_X - 83, y: JOYSTICK_Y, label: '←' },
+      { x: JOYSTICK_X + 83, y: JOYSTICK_Y, label: '→' },
+    ].map(({ x, y, label }) =>
+      scene.add
+        .text(x, y, label, {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '28px',
+          color: '#d7f7ff',
+          stroke: '#02121e',
+          strokeThickness: 5,
+        })
+        .setOrigin(0.5)
+        .setScrollFactor(0)
+        .setDepth(UI_DEPTH + 1),
+    );
 
     this.actionButton = scene.add
       .circle(ACTION_X, ACTION_Y, 102, 0x0b607a, 0.82)
@@ -122,6 +141,7 @@ export class TouchInputAdapter implements InputAdapter {
       this.joystickBase,
       this.joystickThumb,
       joystickLabel,
+      ...joystickArrows,
       this.actionButton,
       this.actionLabel,
       this.cancelButton,
@@ -207,6 +227,17 @@ export class TouchInputAdapter implements InputAdapter {
       this.cancelPressed = false;
     }
     this.syncVisibility();
+  }
+
+  /** Keep direct-diver dragging from stealing a pointer intended for a HUD control. */
+  containsControlPoint(x: number, y: number): boolean {
+    const inside = (cx: number, cy: number, radius: number): boolean =>
+      Math.hypot(x - cx, y - cy) <= radius + CONTROL_HIT_PADDING;
+    return (
+      inside(JOYSTICK_X, JOYSTICK_Y, 116) ||
+      inside(ACTION_X, ACTION_Y, 102) ||
+      (this.cancelVisible && inside(CANCEL_X, CANCEL_Y, 48))
+    );
   }
 
   destroy(): void {

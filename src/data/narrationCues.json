@@ -19,6 +19,11 @@
     "pth": "问题：鱼靠身体的哪个部位从水中取得氧气？A，鱼鳃。B，鱼鳞。",
     "eng": "Question: Which body part do fish use to take oxygen from water? A: Gills. B: Scales."
   },
+  "report-fish-gills-question-v3": {
+    "can": "魚也需要氧氣。看看小魚頭部兩邊的魚腮，一開一合，從水中取得氧氣。題目：魚靠身體的哪個部位，從水中取得氧氣？選項：A，頭部兩邊的魚腮。B，魚鱗。",
+    "pth": "鱼也需要氧气。看看小鱼的鳃一开一合，水中的氧气正往鳃的位置移动。题目：鱼靠身体的哪个部位，从水中取得氧气？选项：A，鱼鳃。B，鱼鳞。",
+    "eng": "Fish need oxygen too. Watch the gills open and close as oxygen in the water moves toward them. Question: What do fish use to take oxygen from water? Options: A, gills. B, scales."
+  },
   "report-do-bridge": {
     "can": "D O 就係溶解氧，即係溶喺水入面，俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。",
     "pth": "D O 就是溶解氧，也就是溶在水里，供鱼和其他水中生物呼吸的氧气。一次读数可能错过清晨低氧，所以要在不同位置、不同深度连续监测。",
@@ -39,10 +44,10 @@
     "pth": "问题三：今天的海洋生物比旧照片少，能直接证明低氧是唯一原因吗？A，不能，照片只能显示生物变少，不能证明唯一原因。B，能，生物变少一定只由低氧造成。",
     "eng": "Question three: Fewer marine organisms are visible today. Does that prove low oxygen is the only cause? A: No. The photo shows fewer organisms but cannot prove one cause. B: Yes. Fewer organisms can only mean low oxygen."
   },
-  "report-recap-4": {
-    "can": "問題四：如果小型魚明顯減少，食物網入面其他生物可能有咩變化？A，依賴佢哋嘅大型礁魚同其他生物都可能減少。B，只會影響小型魚，其他生物唔會改變。",
-    "pth": "问题四：如果小型鱼明显减少，食物网中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
-    "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food web? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
+  "report-recap-4-v2": {
+    "can": "問題四：如果小型魚明顯減少，食物鏈入面其他生物可能有咩變化？A，依賴佢哋嘅大型礁魚同其他生物都可能減少。B，只會影響小型魚，其他生物唔會改變。",
+    "pth": "问题四：如果小型鱼明显减少，食物链中的其他生物可能有什么变化？A，依赖它们的大型礁鱼和其他生物也可能减少。B，只会影响小型鱼，其他生物不会改变。",
+    "eng": "Question four: If small fish decline sharply, what might happen to other organisms in the food chain? A: Larger reef fish and other dependent organisms may also decline. B: Only the small fish change."
   },
   "opening-photo-review": {
     "can": "步驟：點擊黃色光圈，搵出以前嘅海洋線索。提示：需要時可以拖動或者縮放相片；用左右箭嘴切換相片。",
@@ -64,15 +69,40 @@
     "pth": "食物链表示谁吃谁。能量从食物传给吃它的生物，所以箭头由食物指向取食者。请按照能量传递的顺序，把三张卡拖到上方空格。",
     "eng": "A food chain shows who eats whom. Energy moves from food to the organism that eats it, so arrows point from food to eater. Drag the three cards into the upper slots in energy-flow order."
   },
-  "report-food-web": {
-    "can": "拼好食物網。將四張魚類卡拖到正確嘅角色區，完成呢條食物鏈。",
-    "pth": "拼好食物网。把四张鱼类卡拖进正确角色区，完成这条食物链。",
-    "eng": "Build the food web. Drag the four fish cards into their correct roles to complete this food chain."
+  "report-food-chain-v2": {
+    "can": "拼好食物鏈。將四張魚類卡拖到正確嘅角色區，完成呢條食物鏈。",
+    "pth": "拼好食物链。把四张鱼类卡拖进正确角色区，完成这条食物链。",
+    "eng": "Build the food chain. Drag the four fish cards into their correct roles to complete it."
   },
   "lab-compare-manual": {
     "can": "船隻採樣一次可以調查同一地點三個深度，但每層只留低一個時刻嘅讀數，而且價錢最貴。",
     "pth": "船只采样一次可以调查同一个地点的三个深度，但每层只留下一个时刻的读数，而且价格最贵。",
     "eng": "A vessel visit samples three depths at one location, but each depth gets only one moment, and this is the most expensive method."
+  },
+  "lab-intro-guide": {
+    "can": "找出海水何時、在哪裡會缺氧。D O 是溶在水裡、讓魚和其他生物呼吸的氧氣。現在先完成第一步。現在，找出缺少的資料。之後，試用感測膜。最後，佈置監測點。點擊證據桌可讓研究員自動走近；也可用方向鍵行走。",
+    "pth": "找出海水何时、在哪里会缺氧。D O 是溶在水里、让鱼和其他生物呼吸的氧气。现在先完成第一步。现在，找出缺少的资料。之后，试用感测膜。最后，布置监测点。点击证据桌可让研究员自动走近；也可用方向键行走。",
+    "eng": "Find when and where seawater becomes low in oxygen. D O is oxygen dissolved in water that fish and other organisms can breathe. Start with one step. Now, find the missing data. Next, try the sensing film. Last, place monitoring points. Click the evidence table to auto-walk there, or use the arrow keys."
+  },
+  "lab-evidence-guide": {
+    "can": "第一章證明了變化，但還沒有說明原因。步驟：把三個缺少的監測維度拖到正確證據上，找出第二章真正要解決的問題。記錄：十四點二十分，只有一次溶氧讀數。記錄：站點二，只有一個固定位置。記錄：表層五點八毫克每公升，近海床沒有資料。調查標籤：多個深度、連續時間、多個位置。提示：每張記錄缺少的資訊不同，先看清楚再拖動。",
+    "pth": "第一章证明了变化，但还没有说明原因。步骤：把三个缺少的监测维度拖到正确证据上，找出第二章真正要解决的问题。记录：十四点二十分，只有一次溶氧读数。记录：站点二，只有一个固定位置。记录：表层五点八毫克每升，近海床没有资料。调查标签：多个深度、连续时间、多个位置。提示：每张记录缺少的信息不同，先看清楚再拖动。",
+    "eng": "Chapter one showed a change, but not its cause. Step: drag each missing monitoring dimension onto the evidence it completes. Record: fourteen twenty, only one D O reading. Record: station two, only one fixed location. Record: surface five point eight milligrams per liter, no near-bed data. Survey tags: multiple depths, repeated time, and multiple sites. Tip: each record is incomplete in a different way. Read the clue before dragging."
+  },
+  "lab-experiment-guide": {
+    "can": "拼出感測膜測量 D O 的流程。步驟：拖入感測膜，讓光照射感測膜，再讀取光學變化並保存。這是原理模型，不是產品拆解。第一，拖入感測膜。第二，條件：有光照射。第三，讀取變化並上傳。D O 是海水中可供生物呼吸的氧氣。教育模擬：氧氣會令感測膜的光學訊號改變，讀取器再把變化換算成 D O；實際材料、校準與性能以最終技術資料為準。",
+    "pth": "拼出感测膜测量 D O 的流程。步骤：拖入感测膜，让光照射感测膜，再读取光学变化并保存。这是原理模型，不是产品拆解。第一，拖入感测膜。第二，条件：有光照射。第三，读取变化并上传。D O 是海水中可供生物呼吸的氧气。教育模拟：氧气会令感测膜的光学信号改变，读取器再把变化换算成 D O；实际材料、校准与性能以最终技术资料为准。",
+    "eng": "Build the sensing-film D O measurement flow. Step: insert the film, let light shine on it, then read the optical change and save it. This is a principle model, not a product teardown. First, insert sensing film. Second, condition: illuminated. Third, read the change and upload. D O is oxygen in seawater that organisms can breathe. Teaching simulation: oxygen changes the sensing film's optical signal, then the reader converts that change into D O. Real materials, calibration and performance require final technical data."
+  },
+  "lab-final-quiz-1": {
+    "can": "把這次調查的重點帶走。把這次任務的觀察、呼吸線索與監測方法合在一起。題目：若要確認清晨近海床是否出現低氧，哪一種做法最可靠？選項：A，只在下午量一次表層水。B，在近海床連續記錄整天，並比較不同地點。",
+    "pth": "把这次调查的重点带走。把这次任务的观察、呼吸线索与监测方法合在一起。题目：若要确认清晨近海床是否出现低氧，哪一种做法最可靠？选项：A，只在下午量一次表层水。B，在近海床连续记录整天，并比较不同地点。",
+    "eng": "Take away the investigation's key ideas. Connect the observation, breathing clue and monitoring method from this mission. Question: Which method best checks for low oxygen near the seabed before dawn? Options: A, measure surface water once in the afternoon. B, record continuously near the seabed and compare several locations."
+  },
+  "lab-final-quiz-2": {
+    "can": "把這次調查的重點帶走。把這次任務的觀察、呼吸線索與監測方法合在一起。題目：新一代溶解氧傳感器有什麼優勢？選項：A，可組成多點連續監測網，並以紫外光抑制附著、替換薄膜。B，只能在船到達時量一次，而且每次只能記錄表層。",
+    "pth": "把这次调查的重点带走。把这次任务的观察、呼吸线索与监测方法合在一起。题目：新一代溶解氧传感器有什么优势？选项：A，可组成多点连续监测网，并以紫外光抑制附着、替换薄膜。B，只能在船到达时量一次，而且每次只能记录表层。",
+    "eng": "Take away the investigation's key ideas. Connect the observation, breathing clue and monitoring method from this mission. Question: What is an advantage of the next-generation dissolved oxygen sensor? Options: A, it can form a continuous multi-point network, suppress fouling with U V, and use replaceable film. B, it only measures once when a vessel arrives and can record only the surface."
   },
   "lab-compare-fixed": {
     "can": "傳統固定探頭可以連續記錄一個點，但生物附著會令佢斷線，維修仲要用額外預算。",
@@ -88,6 +118,11 @@
     "can": "第一步：選擇本輪工具。成功條件有三項：九個點都有設備，九個點資料完整，而且唔可以超出預算。",
     "pth": "第一步：选择本轮工具。成功条件有三项：九个点都有设备，九个点资料完整，而且不能超出预算。",
     "eng": "First, choose this round's tool. There are three success rules: equipment at all nine points, complete data at all nine points, and stay within budget."
+  },
+  "lab-deployment-result-review": {
+    "can": "資料唔完整，調查未通過。本輪判讀：單次讀數只係一個時刻；斷線之後資料無法補回；超支或者有缺漏都唔通過。下一輪，試用另一種工具。",
+    "pth": "资料不完整，调查未通过。本轮判读：单次读数只是一个时刻；断线后资料无法补回；超支或缺漏都不通过。下一轮，试用另一种工具。",
+    "eng": "The data is incomplete, so the trial did not pass. Trial review: one reading captures only one moment; missing data after a disconnection cannot be recovered; and a trial fails if it exceeds the budget or leaves gaps. Try a different tool next round."
   },
   "lab-summary-1": {
     "can": "第一，魚用鰓取得水中嘅溶解氧。食物鏈互相連接，一種生物改變，亦可能影響其他生物。",
@@ -109,8 +144,8 @@
     "pth": "恭喜你完成海洋呼吸调查！你从旧照片里找到变化，再用多个地点、多个深度和连续时间的监测网补足证据。今天真的有海洋学家和科学家使用传感器、船只与长期资料守护海洋。每一份可靠记录，都能帮助我们了解和保护海洋生态。把好奇心带回生活，一起留意并保护我们的海洋。",
     "eng": "Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean."
   },
-  "feedback-correct": {
-    "can": "答啱喇。",
+  "feedback-correct-v2": {
+    "can": "答對喇，做得好！",
     "pth": "答对了。",
     "eng": "Correct."
   },

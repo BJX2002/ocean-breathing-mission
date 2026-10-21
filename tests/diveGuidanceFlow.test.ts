@@ -81,6 +81,8 @@ describe('Chapter 1 guidance flow', () => {
     expect(hudSource).toContain('this.targetImage.setTexture(textureKey)');
     expect(hudSource).toContain("['W ↑', 'A ←', 'S ↓', 'D →']");
     expect(hudSource).toContain('const TOUCH_NOTIFICATION_X = 1260;');
+    expect(hudSource).toContain('const keycapX = PANEL_LEFT + 126;');
+    expect(hudSource).toContain('const textX = PANEL_LEFT + (movement ? 300 : 202);');
     expect(hudSource).toContain(
       'state.touchControls ? TOUCH_NOTIFICATION_X : DESKTOP_NOTIFICATION_X',
     );

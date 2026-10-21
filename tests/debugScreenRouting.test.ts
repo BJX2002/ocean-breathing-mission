@@ -5,6 +5,9 @@ describe('visual QA screen routing', () => {
 
   it('routes Dive debug screens past the opening sequence', () => {
     for (const screen of [
+      'dive',
+      'briefing',
+      'recap',
       'report',
       'food-chain',
       'fish-oxygen',
@@ -18,13 +21,14 @@ describe('visual QA screen routing', () => {
     }
     expect(openingSource).toContain('this.scene.start(SceneKeys.Dive)');
     const diveSource = readFileSync(`${process.cwd()}/src/scenes/DiveScene.ts`, 'utf8');
-    expect(diveSource).toContain("/^subject-viewfinder([123])$/");
+    expect(diveSource).toContain('/^subject-viewfinder([123])$/');
     expect(diveSource).toContain('this.openSubjectViewfinder(station.id, speciesId)');
   });
 
   it('routes Chapter 2 debug screens directly from the menu', () => {
     const menuSource = readFileSync(`${process.cwd()}/src/scenes/MenuScene.ts`, 'utf8');
     for (const screen of [
+      'lab-intro',
       'evidence',
       'experiment',
       'unlock',
