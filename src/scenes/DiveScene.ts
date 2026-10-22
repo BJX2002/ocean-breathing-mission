@@ -47,6 +47,7 @@ const VESSEL = { x: 650, y: WATER_SURFACE_Y };
 const DIVER_START = { x: VESSEL.x, y: WATER_SURFACE_Y + 170 };
 const REQUIRED_STATION_PHOTOS = 3;
 const DIRECT_DRAG_PICKUP_RADIUS = 150;
+const DIRECT_DRAG_STOP_RADIUS = 22;
 
 interface ViewfinderPhotoSpec {
   readonly speciesId: string;
@@ -396,24 +397,27 @@ export class DiveScene extends Phaser.Scene {
     }
 
     if (!this.oxygen.isDepleted) {
-      let draggedThisFrame = false;
       if (this.directDragPointerId !== null) {
         const target = this.directDragTarget;
-        this.directDragTarget = null;
         if (target !== null) {
-          const before = this.diver.getPosition();
-          this.diver.setPosition(
-            Phaser.Math.Clamp(target.x, this.bounds.left, this.bounds.right),
-            Phaser.Math.Clamp(target.y, this.bounds.top, this.bounds.bottom),
-          );
-          const after = this.diver.getPosition();
-          draggedThisFrame =
-            Phaser.Math.Distance.Between(before.x, before.y, after.x, after.y) > 0.5;
+          const position = this.diver.getPosition();
+          const dx = Phaser.Math.Clamp(target.x, this.bounds.left, this.bounds.right) - position.x;
+          const dy = Phaser.Math.Clamp(target.y, this.bounds.top, this.bounds.bottom) - position.y;
+          const distance = Math.hypot(dx, dy);
+          if (distance <= DIRECT_DRAG_STOP_RADIUS) {
+            this.diver.stopMovement();
+          } else {
+            this.diver.update(
+              delta,
+              { x: dx / distance, y: dy / distance, action: false, cancel: false },
+              this.bounds,
+            );
+          }
         }
       } else {
         this.diver.update(delta, input, this.bounds);
       }
-      this.oxygen.update(delta, draggedThisFrame || this.diver.isMoving);
+      this.oxygen.update(delta, this.diver.isMoving);
       this.updateOxygenGuidance();
       const pos = this.diver.getPosition();
       this.mapView?.update(pos.x, pos.y);
@@ -1742,19 +1746,25 @@ export class DiveScene extends Phaser.Scene {
             const correct = choiceIndex === current.correct;
             button.setTone(correct ? 'primary' : 'danger');
             feedback.setText(i18n.t(correct ? 'report.compareCorrect' : 'report.compareTryAgain'));
-            this.playNarrationCue(
-              correct ? 'feedback-correct-v2' : 'feedback-try-again',
-              button.root,
-              { hideHighlightWhenIdle: false },
-            );
-            if (!correct) return;
-            this.time.delayedCall(760, () => {
+            if (!correct) {
+              this.playNarrationCue('feedback-try-again', button.root, {
+                hideHighlightWhenIdle: false,
+              });
+              return;
+            }
+            const advance = (): void => {
               if (page >= questions.length) this.showFoodChainLesson();
               else {
                 page += 1;
                 render();
               }
+            };
+            const accepted = this.playNarrationCue('feedback-correct-v2', button.root, {
+              hideHighlightWhenIdle: false,
+              onComplete: advance,
+              onError: advance,
             });
+            if (!accepted) advance();
           });
         });
         playQuestionNarration(true);
@@ -2574,14 +2584,10 @@ export class DiveScene extends Phaser.Scene {
             .setColor(correct ? '#d8fffb' : '#fff3b0')
             .setBackgroundColor(correct ? '#0f5f59' : '#6b332e')
             .setText(i18n.t(feedbackKey));
-          this.playNarrationCue(
-            correct ? 'feedback-correct-v2' : 'feedback-try-again',
-            button.root,
-            {
-              hideHighlightWhenIdle: false,
-            },
-          );
           if (!correct) {
+            this.playNarrationCue('feedback-try-again', button.root, {
+              hideHighlightWhenIdle: false,
+            });
             this.tweens.add({
               targets: button.root,
               x: { from: button.root.x - 10, to: button.root.x + 10 },
@@ -2597,13 +2603,22 @@ export class DiveScene extends Phaser.Scene {
           transitioning = true;
           for (const choiceButton of choiceButtons) choiceButton.setEnabled(false);
           if (index >= questions.length - 1) {
+            this.playNarrationCue('feedback-correct-v2', button.root, {
+              hideHighlightWhenIdle: false,
+            });
             continueButton.root.setVisible(true).setActive(true);
             return;
           }
-          this.time.delayedCall(760, () => {
+          const advance = (): void => {
             index += 1;
             render();
+          };
+          const accepted = this.playNarrationCue('feedback-correct-v2', button.root, {
+            hideHighlightWhenIdle: false,
+            onComplete: advance,
+            onError: advance,
           });
+          if (!accepted) advance();
         });
       });
       const back = add(
@@ -2670,10 +2685,11 @@ export class DiveScene extends Phaser.Scene {
       this.add
         .text(GAME_WIDTH / 2, 285, i18n.t('report.doQuestionObserve'), {
           fontFamily: 'sans-serif',
-          fontSize: '29px',
+          fontSize: '25px',
           color: '#d8f5f4',
           align: 'center',
-          wordWrap: { width: 1050, useAdvancedWrap: true },
+          lineSpacing: 4,
+          wordWrap: { width: 1180, useAdvancedWrap: true },
         })
         .setOrigin(0.5)
         .setDepth(3002),
@@ -2735,7 +2751,7 @@ export class DiveScene extends Phaser.Scene {
     );
     const narrationHighlight = add(
       this.add
-        .rectangle(GAME_WIDTH / 2, 700, 1100, 220, 0xf0c95a, 0.025)
+        .rectangle(GAME_WIDTH / 2, 705, 1180, 250, 0xf0c95a, 0.025)
         .setStrokeStyle(4, Palette.gold, 0.82)
         .setDepth(3003)
         .setVisible(false),
@@ -2787,12 +2803,19 @@ export class DiveScene extends Phaser.Scene {
         feedback.setText(
           i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
         );
-        this.playNarrationCue(
-          choice.correct ? 'feedback-correct-v2' : 'feedback-try-again',
-          button.root,
-          { hideHighlightWhenIdle: false },
-        );
-        if (choice.correct) this.time.delayedCall(760, () => this.showDoBridge());
+        if (!choice.correct) {
+          this.playNarrationCue('feedback-try-again', button.root, {
+            hideHighlightWhenIdle: false,
+          });
+          return;
+        }
+        const advance = (): void => this.showDoBridge();
+        const accepted = this.playNarrationCue('feedback-correct-v2', button.root, {
+          hideHighlightWhenIdle: false,
+          onComplete: advance,
+          onError: advance,
+        });
+        if (!accepted) advance();
       });
     });
     const back = new ResearchButton(this, 470, 850, 260, 64, i18n.t('common.backStep'), {
