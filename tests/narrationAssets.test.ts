@@ -7,7 +7,7 @@ const voices = ['can', 'pth', 'eng'] as const;
 
 describe('recorded narration assets', () => {
   it('ships every guided cue in Cantonese, Mandarin, and English', () => {
-    expect(Object.keys(narrationCues)).toHaveLength(31);
+    expect(Object.keys(narrationCues)).toHaveLength(42);
     for (const cueId of Object.keys(narrationCues)) {
       for (const voice of voices) {
         const audioPath = resolve(`public/runtime-public/audio/narration/${voice}/${cueId}.mp3`);
@@ -42,18 +42,21 @@ describe('recorded narration assets', () => {
     expect(lab).toContain("'lab-final-quiz-1'");
     expect(lab).toContain("'lab-final-quiz-2'");
     expect(lab).toContain('private addModalNarration(');
-    expect(lab).toContain("'lab-deployment-result-review'");
+    expect(lab).toContain("'lab-deployment-result-success'");
+    expect(lab).toContain("'lab-result-reason-over-budget'");
     expect(lab).not.toContain('SpeechSynthesisUtterance');
     expect(service).toContain('this.automaticStarts.clear();');
   });
 
   it('uses cache-busted Cantonese prompts for the fish question and correct feedback', () => {
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚也需要氧氣');
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain(
-      '魚靠身體的哪個部位，從水中取得氧氣？',
-    );
+    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('食物鏈');
+    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚靠身體邊個部位');
     expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚腮');
-    expect(narrationCues['feedback-correct-v2'].can).toContain('答對喇');
+    expect(narrationCues['report-fish-gills-question-v3'].can).not.toContain('選項');
+    expect(narrationCues['lab-final-quiz-1'].can).not.toContain('選項');
+    expect(narrationCues['lab-final-quiz-1'].pth).not.toContain('选项');
+    expect(narrationCues['lab-final-quiz-1'].eng).not.toContain('Options');
+    expect(narrationCues['feedback-correct-v2'].can).toContain('答對咗');
   });
 
   it('supports launch-time narration speed and locks progression during playback', () => {

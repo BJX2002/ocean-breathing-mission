@@ -900,19 +900,19 @@ export class OpeningScene extends Phaser.Scene {
       const centerX = index === 0 ? 635 : 1285;
       const centerY = 520;
       const card = this.add
-        .rectangle(centerX, centerY, 580, 180, 0x123c50, 1)
+        .rectangle(centerX, centerY, 600, 180, 0x123c50, 1)
         .setStrokeStyle(3, 0x62b7bd, 0.65)
         .setDepth(3)
         .setInteractive({ useHandCursor: true });
       const choiceText = this.add
         .text(centerX, centerY, `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`, {
           fontFamily: 'sans-serif',
-          fontSize: touchLayout ? '32px' : '31px',
+          fontSize: touchLayout ? '29px' : '31px',
           color: Palette.textLight,
           fontStyle: 'bold',
           align: 'center',
           lineSpacing: 8,
-          wordWrap: { width: 510, useAdvancedWrap: true },
+          wordWrap: { width: 555, useAdvancedWrap: true },
         })
         .setOrigin(0.5)
         .setDepth(5);

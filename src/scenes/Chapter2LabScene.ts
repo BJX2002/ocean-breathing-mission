@@ -110,6 +110,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       'lab-intro-guide',
       'lab-evidence-guide',
       'lab-experiment-guide',
+      'lab-sensor-unlock-guide',
       'lab-final-quiz-1',
       'lab-final-quiz-2',
       'lab-compare-manual',
@@ -117,6 +118,16 @@ export class Chapter2LabScene extends Phaser.Scene {
       'lab-compare-sensor',
       'lab-deployment-guide',
       'lab-deployment-result-review',
+      'lab-deployment-result-failed',
+      'lab-deployment-result-detected-incomplete',
+      'lab-deployment-result-success',
+      'lab-result-reason-unmonitored',
+      'lab-result-reason-manual',
+      'lab-result-reason-gap',
+      'lab-result-reason-unsupported',
+      'lab-result-reason-over-budget',
+      'lab-result-cell-detected',
+      'lab-result-cell-complete',
       'lab-summary-1',
       'lab-summary-2',
       'lab-summary-3',
@@ -1339,8 +1350,6 @@ export class Chapter2LabScene extends Phaser.Scene {
   }
 
   private showUnlockModal(): void {
-    // This is a quiet visual reference screen. Stop any explanation left from
-    // the hands-on experiment instead of carrying narration into the unlock card.
     narrationService.stop();
     const root = this.createModal(
       i18n.t('lab.unlockEyebrow'),
@@ -1496,6 +1505,14 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalButton(root, 560, 920, 280, i18n.t('common.backStep'), false, () => {
       this.showExperimentModal();
     });
+    this.addModalNarration(
+      root,
+      'lab-sensor-unlock-guide',
+      { x: 1290, y: 580, width: 750, height: 470 },
+      1510,
+      920,
+      280,
+    );
   }
 
   private showConsoleModal(): void {
@@ -2579,6 +2596,38 @@ export class Chapter2LabScene extends Phaser.Scene {
       return;
     }
 
+    const failureReasonKeys: string[] = [];
+    const resultNarrationCues: NarrationCueId[] = [];
+    if (snapshot.success) {
+      resultNarrationCues.push('lab-deployment-result-success');
+    } else {
+      resultNarrationCues.push(
+        snapshot.eventDetected
+          ? 'lab-deployment-result-detected-incomplete'
+          : 'lab-deployment-result-failed',
+      );
+      if (snapshot.cells.some((cell) => cell.mode === 'unmonitored')) {
+        failureReasonKeys.push('lab.resultReasonUnmonitored');
+        resultNarrationCues.push('lab-result-reason-unmonitored');
+      }
+      if (snapshot.cells.some((cell) => cell.mode === 'unsupported')) {
+        failureReasonKeys.push('lab.resultReasonUnsupported');
+        resultNarrationCues.push('lab-result-reason-unsupported');
+      }
+      if (snapshot.cells.some((cell) => cell.mode === 'manual')) {
+        failureReasonKeys.push('lab.resultReasonManual');
+        resultNarrationCues.push('lab-result-reason-manual');
+      }
+      if (snapshot.cells.some((cell) => cell.signalGaps.length > 0)) {
+        failureReasonKeys.push('lab.resultReasonGap');
+        resultNarrationCues.push('lab-result-reason-gap');
+      }
+      if (!snapshot.evaluation.goals.withinBudget) {
+        failureReasonKeys.push('lab.resultReasonOverBudget');
+        resultNarrationCues.push('lab-result-reason-over-budget');
+      }
+    }
+
     const resultCriteria = this.add
       .text(960, 319, '', {
         fontFamily: 'sans-serif',
@@ -2659,6 +2708,13 @@ export class Chapter2LabScene extends Phaser.Scene {
       if (cell.mode === 'continuous') return 'lab.resultCellContinuous';
       if (cell.mode === 'manual') return 'lab.resultCellManual';
       return 'lab.resultCellNoData';
+    };
+    const cellNarrationCue = (cell: DeploymentCellRecord): NarrationCueId => {
+      if (cell.mode === 'unmonitored') return 'lab-result-reason-unmonitored';
+      if (cell.mode === 'unsupported') return 'lab-result-reason-unsupported';
+      if (cell.mode === 'manual') return 'lab-result-reason-manual';
+      if (cell.signalGaps.length > 0) return 'lab-result-reason-gap';
+      return cell.lowOxygenDetected ? 'lab-result-cell-detected' : 'lab-result-cell-complete';
     };
     snapshot.cells.forEach((cell) => {
       const column = cell.gridIndex % 3;
@@ -2744,7 +2800,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       .setOrigin(0.5);
     root.add([detailSurface, selectedDevice, cellExplanation]);
 
-    const sidebarSurface = createResearchSurface(this, 1600, 630, 320, 330, {
+    const sidebarSurface = createResearchSurface(this, 1600, 630, 320, 350, {
       fill: Palette.cardSoft,
       border: snapshot.success ? Palette.success : Palette.gold,
       borderAlpha: 0.56,
@@ -2769,29 +2825,29 @@ export class Chapter2LabScene extends Phaser.Scene {
       .text(
         1600,
         545,
-        i18n.t(snapshot.success ? 'lab.resultAdvantageBody' : 'lab.resultFailureAction'),
+        snapshot.success
+          ? i18n.t('lab.resultAdvantageBody')
+          : failureReasonKeys.map((key) => `• ${i18n.t(key)}`).join('\n'),
         {
           fontFamily: 'sans-serif',
-          fontSize: '21px',
+          fontSize: snapshot.success ? '21px' : '18px',
           color: '#d7edf1',
           align: 'left',
-          lineSpacing: 14,
+          lineSpacing: snapshot.success ? 14 : 8,
           wordWrap: { width: 270, useAdvancedWrap: true },
         },
       )
       .setOrigin(0.5, 0);
     root.add([sidebarSurface, sidebarTitle, sidebarBody]);
 
-    if (!snapshot.success) {
-      this.addModalNarration(
-        root,
-        'lab-deployment-result-review',
-        { x: 1600, y: 630, width: 340, height: 350 },
-        1490,
-        930,
-        300,
-      );
-    }
+    this.addModalNarration(
+      root,
+      resultNarrationCues,
+      { x: 1600, y: 630, width: 340, height: 370 },
+      snapshot.success ? 960 : 1490,
+      930,
+      300,
+    );
 
     let activeCell: DeploymentCellRecord | null = null;
     const repairButton = new ResearchButton(
@@ -2844,7 +2900,13 @@ export class Chapter2LabScene extends Phaser.Scene {
         snapshot.evaluation.totalCost + this.deploymentRepairSpend >
         DEMO_DEPLOYMENT_SCENARIO.budget
       ) {
+        if (!failureReasonKeys.includes('lab.resultReasonOverBudget')) {
+          failureReasonKeys.push('lab.resultReasonOverBudget');
+          resultNarrationCues.push('lab-result-reason-over-budget');
+          sidebarBody.setText(failureReasonKeys.map((key) => `• ${i18n.t(key)}`).join('\n'));
+        }
         this.playBudgetAlarm();
+        narrationService.play('lab-result-reason-over-budget');
       }
     });
 
@@ -2897,6 +2959,9 @@ export class Chapter2LabScene extends Phaser.Scene {
                   : 'lab.resultContinuous',
           ),
         );
+      } else if (cell.mode === 'unsupported') {
+        repairButton.root.setVisible(false);
+        cellExplanation.setText(i18n.t('lab.resultUnsupportedPrompt'));
       } else {
         repairButton.root.setVisible(false);
         cellExplanation.setText(
@@ -2910,7 +2975,11 @@ export class Chapter2LabScene extends Phaser.Scene {
     };
 
     cellViews.forEach(({ cell, panel }) => {
-      panel.on(Phaser.Input.Events.POINTER_UP, () => renderCell(cell));
+      panel.on(Phaser.Input.Events.POINTER_UP, () => {
+        if (narrationService.isPlaying()) return;
+        renderCell(cell);
+        narrationService.play(cellNarrationCue(cell));
+      });
     });
     const eventCell = snapshot.cells.find(
       (cell) =>
@@ -3182,7 +3251,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       i18n.t('lab.finalQuizTitle'),
       i18n.t('lab.finalQuizBody'),
       1500,
-      780,
+      820,
     );
     const questionCard = createResearchSurface(this, 960, 470, 1240, 150, {
       fill: Palette.cardSoft,
@@ -3244,6 +3313,7 @@ export class Chapter2LabScene extends Phaser.Scene {
           button.setTone('danger');
           feedback.setText(i18n.t('lab.finalQuizTryAgain')).setColor('#ffb09d');
           finishButton?.setVisible(false);
+          narrationService.play('feedback-try-again');
           return;
         }
 
@@ -3252,18 +3322,19 @@ export class Chapter2LabScene extends Phaser.Scene {
         feedback.setText(i18n.t('lab.finalQuizCorrect')).setColor('#91e6a7');
         finishButton?.setVisible(true);
         choiceButtons.forEach((choiceButton) => choiceButton.setEnabled(false));
+        narrationService.play('feedback-correct-v2');
       });
       choiceButtons.push(button);
       root.add(button.root);
     });
 
-    this.addModalButton(root, 400, 870, 260, i18n.t('common.backStep'), false, () =>
+    this.addModalButton(root, 400, 890, 260, i18n.t('common.backStep'), false, () =>
       this.showLearningSummary(),
     );
     finishButton = this.addModalButton(
       root,
       1320,
-      870,
+      890,
       340,
       i18n.t('lab.finalQuizNext'),
       true,
@@ -3272,9 +3343,9 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalNarration(
       root,
       'lab-final-quiz-1',
-      { x: 960, y: 590, width: 1340, height: 380 },
+      { x: 960, y: 600, width: 1420, height: 440 },
       850,
-      870,
+      890,
       300,
     );
   }
@@ -3285,7 +3356,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       i18n.t('lab.finalQuizTitle'),
       i18n.t('lab.finalQuizBody'),
       1500,
-      780,
+      820,
     );
     const questionCard = createResearchSurface(this, 960, 470, 1240, 150, {
       fill: Palette.cardSoft,
@@ -3352,6 +3423,7 @@ export class Chapter2LabScene extends Phaser.Scene {
           button.setTone('danger');
           feedback.setText(i18n.t('lab.finalQuizSensorTryAgain')).setColor('#ffb09d');
           finishButton?.setVisible(false);
+          narrationService.play('feedback-try-again');
           return;
         }
 
@@ -3360,18 +3432,19 @@ export class Chapter2LabScene extends Phaser.Scene {
         feedback.setText(i18n.t('lab.finalQuizSensorCorrect')).setColor('#91e6a7');
         finishButton?.setVisible(true);
         choiceButtons.forEach((choiceButton) => choiceButton.setEnabled(false));
+        narrationService.play('feedback-correct-v2');
       });
       choiceButtons.push(button);
       root.add(button.root);
     });
 
-    this.addModalButton(root, 400, 870, 260, i18n.t('common.backStep'), false, () =>
+    this.addModalButton(root, 400, 890, 260, i18n.t('common.backStep'), false, () =>
       this.showFinalQuiz(),
     );
     finishButton = this.addModalButton(
       root,
       1320,
-      870,
+      890,
       340,
       i18n.t('lab.finalQuizFinish'),
       true,
@@ -3380,9 +3453,9 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalNarration(
       root,
       'lab-final-quiz-2',
-      { x: 960, y: 590, width: 1340, height: 380 },
+      { x: 960, y: 600, width: 1420, height: 440 },
       850,
-      870,
+      890,
       300,
     );
   }
@@ -3494,7 +3567,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     const endingButton = new ResearchButton(
       this,
       960,
-      930,
+      895,
       480,
       64,
       i18n.t('lab.endingListenFirst'),
@@ -3671,7 +3744,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   /** Attach recorded narration, a replay button and a non-obscuring pulse to a modal. */
   private addModalNarration(
     root: Phaser.GameObjects.Container,
-    cue: NarrationCueId,
+    cueOrCues: NarrationCueId | readonly NarrationCueId[],
     bounds: {
       readonly x: number;
       readonly y: number;
@@ -3682,6 +3755,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     buttonY: number,
     buttonWidth = 320,
   ): Phaser.GameObjects.Container {
+    const cues = typeof cueOrCues === 'string' ? [cueOrCues] : cueOrCues;
     const highlight = this.add
       .rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0xf0c95a, 0.018)
       .setStrokeStyle(4, Palette.gold, 0.82)
@@ -3710,34 +3784,41 @@ export class Chapter2LabScene extends Phaser.Scene {
     const play = (automatic = false): void => {
       if (this.modalRoot !== root) return;
       voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-      const accepted = narrationService.play(cue, {
-        automatic,
-        onStart: () => {
-          if (this.modalRoot !== root || !highlight.active) return;
-          highlight.setVisible(true).setAlpha(0.34);
-          this.tweens.add({
-            targets: highlight,
-            alpha: { from: 0.34, to: 1 },
-            duration: 520,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.InOut',
-          });
-        },
-        onComplete: () => {
+      const playCue = (index: number): void => {
+        const cue = cues[index];
+        if (cue === undefined) {
           stopHighlight();
           setReady();
-        },
-        onError: () => {
+          return;
+        }
+        const accepted = narrationService.play(cue, {
+          automatic,
+          onStart: () => {
+            if (this.modalRoot !== root || !highlight.active) return;
+            this.tweens.killTweensOf(highlight);
+            highlight.setVisible(true).setAlpha(0.34);
+            this.tweens.add({
+              targets: highlight,
+              alpha: { from: 0.34, to: 1 },
+              duration: 520,
+              yoyo: true,
+              repeat: -1,
+              ease: 'Sine.InOut',
+            });
+          },
+          onComplete: () => playCue(index + 1),
+          onError: () => playCue(index + 1),
+          onStop: () => {
+            stopHighlight();
+            setReady();
+          },
+        });
+        if (!accepted) {
           stopHighlight();
-          setReady('report.aiVoiceRetry');
-        },
-        onStop: () => {
-          stopHighlight();
-          setReady();
-        },
-      });
-      if (!accepted) setReady();
+          setReady(index === 0 ? 'report.aiVoiceReplay' : 'report.aiVoiceRetry');
+        }
+      };
+      playCue(0);
     };
     voiceButton.onPress(() => play(false));
     play(true);

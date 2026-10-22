@@ -9,6 +9,7 @@ import {
   type NarrationVoice,
 } from '../state/ExperiencePreferences';
 import { isDebugEnabled } from '../debug/DebugOverlay';
+import { createResearchSurface } from '../ui/ResearchUi';
 
 type MenuScreen = 'language' | 'title' | 'chapters';
 
@@ -251,6 +252,15 @@ export class MenuScene extends Phaser.Scene {
     ];
     const startX = GAME_WIDTH - 474;
     const top = 28;
+    createResearchSurface(this, GAME_WIDTH - 344, 67, 650, 112, {
+      fill: 0x03131f,
+      fillAlpha: 0.82,
+      border: Palette.accent,
+      borderAlpha: 0.32,
+      radius: 18,
+      depth: 14,
+      shadow: true,
+    });
     this.add
       .text(startX - 112, top + 15, i18n.t('menu.languageCornerLabel'), {
         fontFamily: 'monospace',
