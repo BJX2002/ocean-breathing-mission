@@ -308,22 +308,27 @@ export class NormalGameplayHUD {
     this.targetLabel.setVisible(visible);
     if (!visible) return false;
 
-    const cardLeft = PANEL_LEFT + PANEL_WIDTH - 174;
-    const cardTop = PANEL_TOP + 98;
+    const cardWidth = 250;
+    const cardHeight = 104;
+    const cardLeft = PANEL_LEFT + PANEL_WIDTH - cardWidth - 18;
+    const cardTop = PANEL_TOP + 82;
     this.targetCard.fillStyle(0x173c32, 0.96);
-    this.targetCard.fillRoundedRect(cardLeft, cardTop, 156, 88, 14);
+    this.targetCard.fillRoundedRect(cardLeft, cardTop, cardWidth, cardHeight, 14);
     this.targetCard.lineStyle(2, 0xf0c95a, 0.72);
-    this.targetCard.strokeRoundedRect(cardLeft, cardTop, 156, 88, 14);
+    this.targetCard.strokeRoundedRect(cardLeft, cardTop, cardWidth, cardHeight, 14);
     this.targetCard.fillStyle(0xf0c95a, 0.96);
     this.targetCard.fillRoundedRect(cardLeft + 10, cardTop - 7, 64, 20, 8);
 
     this.targetImage.setTexture(textureKey);
     const source = this.scene.textures.get(textureKey).getSourceImage();
-    const scale = Math.min(62 / source.width, 48 / source.height);
+    const scale = Math.min(82 / source.width, 60 / source.height);
     this.targetImage
-      .setPosition(cardLeft + 45, cardTop + 49)
+      .setPosition(cardLeft + 56, cardTop + 58)
       .setDisplaySize(source.width * scale, source.height * scale);
-    this.targetLabel.setPosition(cardLeft + 146, cardTop + 50).setText(label);
+    this.targetLabel
+      .setPosition(cardLeft + cardWidth - 12, cardTop + 57)
+      .setWordWrapWidth(148, true)
+      .setText(label);
     return true;
   }
 
@@ -343,7 +348,7 @@ export class NormalGameplayHUD {
       .setY(PANEL_TOP + 143)
       .setWordWrapWidth(
         targetVisible
-          ? PANEL_LEFT + PANEL_WIDTH - 190 - textX
+          ? PANEL_LEFT + PANEL_WIDTH - 286 - textX
           : PANEL_LEFT + PANEL_WIDTH - 24 - textX,
         true,
       );

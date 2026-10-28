@@ -252,7 +252,9 @@ export class MenuScene extends Phaser.Scene {
     ];
     const startX = GAME_WIDTH - 474;
     const top = 28;
-    createResearchSurface(this, GAME_WIDTH - 344, 67, 650, 112, {
+    const panelWidth = 780;
+    const panelRight = GAME_WIDTH - 28;
+    createResearchSurface(this, panelRight - panelWidth / 2, 67, panelWidth, 112, {
       fill: 0x03131f,
       fillAlpha: 0.82,
       border: Palette.accent,

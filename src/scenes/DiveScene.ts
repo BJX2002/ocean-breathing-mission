@@ -258,6 +258,7 @@ export class DiveScene extends Phaser.Scene {
     this.directDragPointerId = null;
     this.directDragTarget = null;
     this.directDragOffset.set(0, 0);
+    narrationService.resetAutomaticStarts();
     narrationService.preload([
       'dive-mission-brief',
       'report-today-gallery',
@@ -2740,7 +2741,7 @@ export class DiveScene extends Phaser.Scene {
     }
     const feedback = add(
       this.add
-        .text(GAME_WIDTH / 2, 835, '', {
+        .text(GAME_WIDTH / 2, 805, '', {
           fontFamily: 'sans-serif',
           fontSize: '22px',
           color: '#91e6a7',
@@ -2751,7 +2752,7 @@ export class DiveScene extends Phaser.Scene {
     );
     const narrationHighlight = add(
       this.add
-        .rectangle(GAME_WIDTH / 2, 705, 1180, 250, 0xf0c95a, 0.025)
+        .rectangle(GAME_WIDTH / 2, 695, 1180, 250, 0xf0c95a, 0.025)
         .setStrokeStyle(4, Palette.gold, 0.82)
         .setDepth(3003)
         .setVisible(false),
@@ -2775,7 +2776,7 @@ export class DiveScene extends Phaser.Scene {
     );
     add(
       this.add
-        .text(490, 675, i18n.t('common.optionsLabel'), {
+        .text(490, 665, i18n.t('common.optionsLabel'), {
           fontFamily: 'sans-serif',
           fontSize: '29px',
           color: '#f0c95a',
@@ -2791,7 +2792,7 @@ export class DiveScene extends Phaser.Scene {
       const button = new ResearchButton(
         this,
         700 + index * 520,
-        742,
+        735,
         440,
         94,
         `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
@@ -2818,7 +2819,7 @@ export class DiveScene extends Phaser.Scene {
         if (!accepted) advance();
       });
     });
-    const back = new ResearchButton(this, 470, 850, 260, 64, i18n.t('common.backStep'), {
+    const back = new ResearchButton(this, 470, 875, 260, 64, i18n.t('common.backStep'), {
       tone: 'secondary',
       fontSize: 22,
       depth: 3004,
@@ -2832,7 +2833,7 @@ export class DiveScene extends Phaser.Scene {
     const voiceButton = new ResearchButton(
       this,
       1360,
-      850,
+      875,
       340,
       64,
       i18n.t('report.aiVoiceReplay'),
