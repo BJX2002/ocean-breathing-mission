@@ -73,6 +73,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   private deploymentRepairSpend = 0;
   private monitoringComparisonComplete = false;
   private deploymentToolRound = 0;
+  private narrationInstance = 0;
 
   constructor() {
     super(SceneKeys.Chapter2Lab);
@@ -94,6 +95,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.consoleVisited = false;
     this.monitoringComparisonComplete = false;
     this.deploymentToolRound = 0;
+    this.narrationInstance = 0;
     this.deploymentRunComplete = false;
     this.deploymentRunSnapshot = null;
     this.deploymentRepairSpend = 0;
@@ -1024,7 +1026,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalNarration(
       root,
       'lab-intro-guide',
-      { x: 960, y: 560, width: 1200, height: 460 },
+      { x: 960, y: 555, width: 1260, height: 500 },
       850,
       836,
       300,
@@ -1706,6 +1708,8 @@ export class Chapter2LabScene extends Phaser.Scene {
         return;
       }
       const accepted = narrationService.play(cue, {
+        automatic: true,
+        automaticKey: `lab-comparison-${index}`,
         onStart: () => {
           narrationHighlight.setVisible(true).setAlpha(0.32);
           this.tweens.add({
@@ -1934,6 +1938,8 @@ export class Chapter2LabScene extends Phaser.Scene {
     };
     const narrationStart = this.time.delayedCall(320, () => {
       const accepted = narrationService.play('lab-deployment-guide', {
+        automatic: true,
+        automaticKey: 'lab-deployment-guide-screen',
         onStart: () => {
           // Keep the words steady; only the two surrounding coachmark frames pulse.
           pulseGuide(goalGuide);
@@ -3216,6 +3222,8 @@ export class Chapter2LabScene extends Phaser.Scene {
         return;
       }
       const accepted = narrationService.play(cue, {
+        automatic: true,
+        automaticKey: `lab-summary-${index}`,
         onStart: () => {
           summaryHighlight.setVisible(true).setAlpha(0.28).setScale(0.985);
           this.tweens.add({
@@ -3303,7 +3311,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         630 + index * 660,
         680,
         620,
-        124,
+        140,
         `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
         { tone: 'secondary', fontSize: 27, lineSpacing: 7 },
       );
@@ -3343,7 +3351,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalNarration(
       root,
       'lab-final-quiz-1',
-      { x: 960, y: 600, width: 1420, height: 440 },
+      { x: 960, y: 605, width: 1460, height: 460 },
       850,
       890,
       300,
@@ -3453,7 +3461,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.addModalNarration(
       root,
       'lab-final-quiz-2',
-      { x: 960, y: 600, width: 1420, height: 440 },
+      { x: 960, y: 605, width: 1460, height: 460 },
       850,
       890,
       300,
@@ -3585,6 +3593,8 @@ export class Chapter2LabScene extends Phaser.Scene {
     };
     const narrationStart = this.time.delayedCall(380, () => {
       const accepted = narrationService.play('lab-ending', {
+        automatic: true,
+        automaticKey: 'lab-ending-screen',
         onStart: () => {
           this.tweens.add({
             targets: scienceSurface,
@@ -3756,6 +3766,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     buttonWidth = 320,
   ): Phaser.GameObjects.Container {
     const cues = typeof cueOrCues === 'string' ? [cueOrCues] : cueOrCues;
+    const narrationGroupKey = `lab-modal-${++this.narrationInstance}`;
     const highlight = this.add
       .rectangle(bounds.x, bounds.y, bounds.width, bounds.height, 0xf0c95a, 0.018)
       .setStrokeStyle(4, Palette.gold, 0.82)
@@ -3793,6 +3804,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         }
         const accepted = narrationService.play(cue, {
           automatic,
+          automaticKey: `${narrationGroupKey}-${index}`,
           onStart: () => {
             if (this.modalRoot !== root || !highlight.active) return;
             this.tweens.killTweensOf(highlight);

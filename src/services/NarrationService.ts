@@ -5,6 +5,8 @@ export type NarrationCueId = keyof typeof narrationCues;
 
 export interface NarrationCallbacks {
   readonly automatic?: boolean;
+  /** Distinguishes separate visits to the same automatically narrated screen. */
+  readonly automaticKey?: string;
   readonly onStart?: () => void;
   readonly onComplete?: () => void;
   readonly onError?: () => void;
@@ -21,7 +23,8 @@ class NarrationService {
   private currentAudio: HTMLAudioElement | null = null;
   private currentUtterance: SpeechSynthesisUtterance | null = null;
   private currentStopCallback: (() => void) | null = null;
-  private readonly automaticStarts = new Set<NarrationCueId>();
+  private readonly automaticStarts = new Set<string>();
+  private pendingGestureCleanup: (() => void) | null = null;
   private readonly preloadedAudio = new Map<string, HTMLAudioElement>();
   private readonly playbackListeners = new Set<(playing: boolean) => void>();
 
@@ -45,7 +48,8 @@ class NarrationService {
   }
 
   play(cue: NarrationCueId, callbacks: NarrationCallbacks = {}): boolean {
-    if (callbacks.automatic === true && this.automaticStarts.has(cue)) return false;
+    const automaticKey = callbacks.automaticKey ?? cue;
+    if (callbacks.automatic === true && this.automaticStarts.has(automaticKey)) return false;
     this.stop();
     const voice = experiencePreferences.getVoice();
     if (typeof window !== 'undefined' && typeof window.Audio !== 'undefined') {
@@ -58,6 +62,8 @@ class NarrationService {
     const wasPlaying = this.isPlaying();
     const onStop = this.currentStopCallback;
     this.currentStopCallback = null;
+    this.pendingGestureCleanup?.();
+    this.pendingGestureCleanup = null;
     if (this.currentAudio !== null) {
       this.currentAudio.pause();
       this.currentAudio.removeAttribute('src');
@@ -96,9 +102,12 @@ class NarrationService {
     audio.playbackRate = experiencePreferences.getNarrationSpeed();
     let started = false;
     let finished = false;
+    const automaticKey = callbacks.automaticKey ?? cue;
+    let clearGestureRetry = (): void => undefined;
     const finish = (success: boolean): void => {
       if (finished) return;
       finished = true;
+      clearGestureRetry();
       if (this.currentAudio === audio) {
         this.currentAudio = null;
         this.currentStopCallback = null;
@@ -112,7 +121,7 @@ class NarrationService {
       () => {
         if (started) return;
         started = true;
-        if (callbacks.automatic === true) this.automaticStarts.add(cue);
+        if (callbacks.automatic === true) this.automaticStarts.add(automaticKey);
         callbacks.onStart?.();
       },
       { once: true },
@@ -133,7 +142,31 @@ class NarrationService {
     this.currentAudio = audio;
     this.currentStopCallback = callbacks.onStop ?? null;
     this.notifyPlaybackChange();
-    void audio.play().catch(() => finish(false));
+    const queueGestureRetry = (): void => {
+      if (typeof window === 'undefined' || finished || this.currentAudio !== audio) {
+        finish(false);
+        return;
+      }
+      this.pendingGestureCleanup?.();
+      const retry = (): void => {
+        clearGestureRetry();
+        if (finished || this.currentAudio !== audio) return;
+        // Keep this call synchronous inside the trusted gesture for iPad Safari.
+        void audio.play().catch(() => finish(false));
+      };
+      clearGestureRetry = (): void => {
+        window.removeEventListener('pointerdown', retry, true);
+        window.removeEventListener('keydown', retry, true);
+        if (this.pendingGestureCleanup === clearGestureRetry) this.pendingGestureCleanup = null;
+      };
+      this.pendingGestureCleanup = clearGestureRetry;
+      window.addEventListener('pointerdown', retry, true);
+      window.addEventListener('keydown', retry, true);
+    };
+    void audio.play().catch(() => {
+      if (callbacks.automatic === true && !started) queueGestureRetry();
+      else finish(false);
+    });
     return true;
   }
 
@@ -157,6 +190,7 @@ class NarrationService {
     );
     if (availableVoices.length > 0 && matchingVoice === undefined) return false;
     const utterance = new SpeechSynthesisUtterance(narrationCues[cue][voice]);
+    const automaticKey = callbacks.automaticKey ?? cue;
     utterance.lang = language;
     utterance.rate = experiencePreferences.getNarrationSpeed();
     utterance.pitch = 1;
@@ -165,7 +199,7 @@ class NarrationService {
     this.currentStopCallback = callbacks.onStop ?? null;
     this.notifyPlaybackChange();
     utterance.onstart = () => {
-      if (callbacks.automatic === true) this.automaticStarts.add(cue);
+      if (callbacks.automatic === true) this.automaticStarts.add(automaticKey);
       if (!alreadyStarted) callbacks.onStart?.();
     };
     utterance.onend = () => {

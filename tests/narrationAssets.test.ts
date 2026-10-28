@@ -31,9 +31,11 @@ describe('recorded narration assets', () => {
 
   it('resets auto-play history for a fresh mission and uses recorded audio in Chapter 2', () => {
     const opening = readFileSync(resolve('src/scenes/OpeningScene.ts'), 'utf8');
+    const dive = readFileSync(resolve('src/scenes/DiveScene.ts'), 'utf8');
     const lab = readFileSync(resolve('src/scenes/Chapter2LabScene.ts'), 'utf8');
     const service = readFileSync(resolve('src/services/NarrationService.ts'), 'utf8');
     expect(opening).toContain('narrationService.resetAutomaticStarts();');
+    expect(dive).toContain('narrationService.resetAutomaticStarts();');
     expect(lab).toContain("narrationService.play('lab-deployment-guide'");
     expect(lab).toContain("narrationService.play('lab-ending'");
     expect(lab).toContain("'lab-intro-guide'");
@@ -46,16 +48,22 @@ describe('recorded narration assets', () => {
     expect(lab).toContain("'lab-result-reason-over-budget'");
     expect(lab).not.toContain('SpeechSynthesisUtterance');
     expect(service).toContain('this.automaticStarts.clear();');
+    expect(service).toContain("window.addEventListener('pointerdown', retry, true)");
+    expect(service).toContain('callbacks.automaticKey ?? cue');
   });
 
   it('uses cache-busted Cantonese prompts for the fish question and correct feedback', () => {
     expect(narrationCues['report-fish-gills-question-v3'].can).toContain('食物鏈');
     expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚靠身體邊個部位');
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚腮');
+    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚鰓');
+    expect(narrationCues['report-fish-gills-question-v3'].can).not.toContain('一開一合');
     expect(narrationCues['report-fish-gills-question-v3'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].pth).not.toContain('选项');
     expect(narrationCues['lab-final-quiz-1'].eng).not.toContain('Options');
+    expect(narrationCues['lab-final-quiz-1'].can).not.toContain('把這次調查的重點帶走');
+    expect(narrationCues['lab-experiment-guide'].can).toContain('讓光照射感測膜');
+    expect(narrationCues['lab-experiment-guide'].can).not.toContain('教育模擬');
     expect(narrationCues['feedback-correct-v2'].can).toContain('答對咗');
   });
 

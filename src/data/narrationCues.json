@@ -20,9 +20,9 @@
     "eng": "Question: Which body part do fish use to take oxygen from water? A: Gills. B: Scales."
   },
   "report-fish-gills-question-v3": {
-    "can": "食物鏈顯示生物彼此依賴。要了解小型魚點解減少，先睇下魚點樣喺水入面取得氧氣。小魚嘅魚腮一開一合，從水中取得氧氣。題目：魚靠身體邊個部位，喺水入面取得氧氣？A，魚腮。B，魚鱗。",
-    "pth": "食物链显示生物彼此依赖。要了解小型鱼为什么减少，先看看鱼怎样从水中取得氧气。小鱼的鳃一开一合，从水中取得氧气。题目：鱼靠身体的哪个部位，从水中取得氧气？A，鱼鳃。B，鱼鳞。",
-    "eng": "A food chain shows how organisms depend on one another. To investigate why small fish declined, first see how fish take oxygen from water. Their gills open and close to take oxygen from the water. Question: What do fish use to take oxygen from water? A, gills. B, scales."
+    "can": "食物鏈顯示生物彼此依賴。要了解小型魚點解減少，先睇下魚點樣喺水入面取得氧氣。題目：魚靠身體邊個部位，喺水入面取得氧氣？A，魚鰓。B，魚鱗。",
+    "pth": "食物链显示生物彼此依赖。要了解小型鱼为什么减少，先看看鱼怎样从水中取得氧气。题目：鱼靠身体的哪个部位，从水中取得氧气？A，鱼鳃。B，鱼鳞。",
+    "eng": "A food chain shows how organisms depend on one another. To investigate why small fish declined, first see how fish take oxygen from water. Question: What do fish use to take oxygen from water? A, gills. B, scales."
   },
   "report-do-bridge": {
     "can": "D O 就係溶解氧，即係溶喺水入面，俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。",
@@ -90,19 +90,19 @@
     "eng": "Chapter one showed a change, but not its cause. Step: drag each missing monitoring dimension onto the evidence it completes. Record: fourteen twenty, only one D O reading. Record: station two, only one fixed location. Record: surface five point eight milligrams per liter, no near-bed data. Survey tags: multiple depths, repeated time, and multiple sites. Tip: each record is incomplete in a different way. Read the clue before dragging."
   },
   "lab-experiment-guide": {
-    "can": "拼出感測膜測量 D O 的流程。步驟：拖入感測膜，讓光照射感測膜，再讀取光學變化並保存。這是原理模型，不是產品拆解。第一，拖入感測膜。第二，條件：有光照射。第三，讀取變化並上傳。D O 是海水中可供生物呼吸的氧氣。教育模擬：氧氣會令感測膜的光學訊號改變，讀取器再把變化換算成 D O；實際材料、校準與性能以最終技術資料為準。",
-    "pth": "拼出感测膜测量 D O 的流程。步骤：拖入感测膜，让光照射感测膜，再读取光学变化并保存。这是原理模型，不是产品拆解。第一，拖入感测膜。第二，条件：有光照射。第三，读取变化并上传。D O 是海水中可供生物呼吸的氧气。教育模拟：氧气会令感测膜的光学信号改变，读取器再把变化换算成 D O；实际材料、校准与性能以最终技术资料为准。",
-    "eng": "Build the sensing-film D O measurement flow. Step: insert the film, let light shine on it, then read the optical change and save it. This is a principle model, not a product teardown. First, insert sensing film. Second, condition: illuminated. Third, read the change and upload. D O is oxygen in seawater that organisms can breathe. Teaching simulation: oxygen changes the sensing film's optical signal, then the reader converts that change into D O. Real materials, calibration and performance require final technical data."
+    "can": "拼出感測膜測量 D O 的流程。步驟：拖入感測膜，讓光照射感測膜，再讀取光學變化並保存。這是原理模型，不是產品拆解。第一，拖入感測膜。第二，讓光照射感測膜。第三，讀取變化並上傳。",
+    "pth": "拼出感测膜测量 D O 的流程。步骤：拖入感测膜，让光照射感测膜，再读取光学变化并保存。这是原理模型，不是产品拆解。第一，拖入感测膜。第二，让光照射感测膜。第三，读取变化并上传。",
+    "eng": "Build the sensing-film D O measurement flow. Step: insert the film, let light shine on it, then read the optical change and save it. This is a principle model, not a product teardown. First, insert sensing film. Second, let light shine on the sensing film. Third, read the change and upload."
   },
   "lab-final-quiz-1": {
-    "can": "把這次調查的重點帶走。把這次任務的觀察、呼吸線索與監測方法合在一起。題目：若要確認清晨近海床是否出現低氧，哪一種做法最可靠？A，只在下午量一次表層水。B，在近海床連續記錄整天，並比較不同地點。",
-    "pth": "把这次调查的重点带走。把这次任务的观察、呼吸线索与监测方法合在一起。题目：若要确认清晨近海床是否出现低氧，哪一种做法最可靠？A，只在下午量一次表层水。B，在近海床连续记录整天，并比较不同地点。",
-    "eng": "Take away the investigation's key ideas. Connect the observation, breathing clue and monitoring method from this mission. Question: Which method best checks for low oxygen near the seabed before dawn? A, measure surface water once in the afternoon. B, record continuously near the seabed and compare several locations."
+    "can": "題目：若要確認清晨近海床是否出現低氧，哪一種做法最可靠？A，只在下午量一次表層水。B，在近海床連續記錄整天，並比較不同地點。",
+    "pth": "题目：若要确认清晨近海床是否出现低氧，哪一种做法最可靠？A，只在下午量一次表层水。B，在近海床连续记录整天，并比较不同地点。",
+    "eng": "Question: Which method best checks for low oxygen near the seabed before dawn? A, measure surface water once in the afternoon. B, record continuously near the seabed and compare several locations."
   },
   "lab-final-quiz-2": {
-    "can": "把這次調查的重點帶走。把這次任務的觀察、呼吸線索與監測方法合在一起。題目：新一代溶解氧傳感器有什麼優勢？A，可組成多點連續監測網，並以紫外光抑制附著、替換薄膜。B，只能在船到達時量一次，而且每次只能記錄表層。",
-    "pth": "把这次调查的重点带走。把这次任务的观察、呼吸线索与监测方法合在一起。题目：新一代溶解氧传感器有什么优势？A，可组成多点连续监测网，并以紫外光抑制附着、替换薄膜。B，只能在船到达时量一次，而且每次只能记录表层。",
-    "eng": "Take away the investigation's key ideas. Connect the observation, breathing clue and monitoring method from this mission. Question: What is an advantage of the next-generation dissolved oxygen sensor? A, it can form a continuous multi-point network, suppress fouling with U V, and use replaceable film. B, it only measures once when a vessel arrives and can record only the surface."
+    "can": "題目：新一代溶解氧傳感器有什麼優勢？A，可組成多點連續監測網，並以紫外光抑制附著、替換薄膜。B，只能在船到達時量一次，而且每次只能記錄表層。",
+    "pth": "题目：新一代溶解氧传感器有什么优势？A，可组成多点连续监测网，并以紫外光抑制附着、替换薄膜。B，只能在船到达时量一次，而且每次只能记录表层。",
+    "eng": "Question: What is an advantage of the next-generation dissolved oxygen sensor? A, it can form a continuous multi-point network, suppress fouling with U V, and use replaceable film. B, it only measures once when a vessel arrives and can record only the surface."
   },
   "lab-compare-fixed": {
     "can": "傳統固定探頭可以連續記錄一個點，但生物附著會令佢斷線，維修仲要用額外預算。",
@@ -200,9 +200,9 @@
     "eng": "Congratulations on completing the Ocean Breathing Survey. You found change in old photographs, then completed the evidence with monitoring across locations, depths and time. Oceanographers and scientists really use sensors, vessels and long-term records to care for the ocean. Every reliable observation helps us understand and protect marine ecosystems. Carry your curiosity with you, and help notice and protect our ocean."
   },
   "feedback-correct-v2": {
-    "can": "答對咗。做得好！",
-    "pth": "答对了。",
-    "eng": "Correct."
+    "can": "答對咗，做得非常好！",
+    "pth": "答对了，做得非常好！",
+    "eng": "Correct. Very well done!"
   },
   "feedback-try-again": {
     "can": "未啱，再試一次。",
