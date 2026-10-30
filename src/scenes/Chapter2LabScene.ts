@@ -74,6 +74,7 @@ export class Chapter2LabScene extends Phaser.Scene {
   private monitoringComparisonComplete = false;
   private deploymentToolRound = 0;
   private narrationInstance = 0;
+  private budgetAlarmAudio: HTMLAudioElement | null = null;
 
   constructor() {
     super(SceneKeys.Chapter2Lab);
@@ -99,6 +100,7 @@ export class Chapter2LabScene extends Phaser.Scene {
     this.deploymentRunComplete = false;
     this.deploymentRunSnapshot = null;
     this.deploymentRepairSpend = 0;
+    this.prepareBudgetAlarm();
     narrationService.resetAutomaticStarts();
     this.zones.length = 0;
     this.progressDots.length = 0;
@@ -1020,13 +1022,13 @@ export class Chapter2LabScene extends Phaser.Scene {
       this.targetX = 300;
       this.pendingInteractionZoneId = 'evidence';
     });
-    this.addModalButton(root, 400, 836, 250, i18n.t('common.backStep'), false, () => {
+    this.addModalButton(root, 440, 836, 250, i18n.t('common.backStep'), false, () => {
       this.scene.start(SceneKeys.Menu, { screen: 'chapters' });
     });
     this.addModalNarration(
       root,
       'lab-intro-guide',
-      { x: 960, y: 555, width: 1260, height: 500 },
+      { x: 960, y: 565, width: 1260, height: 410 },
       850,
       836,
       300,
@@ -3867,25 +3869,58 @@ export class Chapter2LabScene extends Phaser.Scene {
     });
   }
 
+  private prepareBudgetAlarm(): void {
+    if (typeof window === 'undefined' || typeof window.Audio === 'undefined') return;
+    const audio = new window.Audio(new URL('audio/sfx/budget-alarm.mp3', document.baseURI).href);
+    audio.preload = 'auto';
+    audio.setAttribute('playsinline', '');
+    audio.load();
+    this.budgetAlarmAudio = audio;
+  }
+
   private playBudgetAlarm(): void {
-    const AudioContextConstructor = window.AudioContext;
+    const audio = this.budgetAlarmAudio;
+    if (audio !== null) {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.volume = 0.72;
+      void audio.play().catch(() => this.playSynthesizedBudgetAlarm());
+      return;
+    }
+    this.playSynthesizedBudgetAlarm();
+  }
+
+  private playSynthesizedBudgetAlarm(): void {
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (AudioContextConstructor === undefined) return;
     const context = new AudioContextConstructor();
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.13, context.currentTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
-    gain.connect(context.destination);
-    [0, 0.18].forEach((delay) => {
-      const oscillator = context.createOscillator();
-      oscillator.type = 'square';
-      oscillator.frequency.setValueAtTime(880, context.currentTime + delay);
-      oscillator.frequency.exponentialRampToValueAtTime(520, context.currentTime + delay + 0.12);
-      oscillator.connect(gain);
-      oscillator.start(context.currentTime + delay);
-      oscillator.stop(context.currentTime + delay + 0.14);
-      if (delay > 0) oscillator.addEventListener('ended', () => void context.close());
-    });
+    const scheduleAlarm = (): void => {
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.13, context.currentTime + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.34);
+      gain.connect(context.destination);
+      [0, 0.18].forEach((delay) => {
+        const oscillator = context.createOscillator();
+        oscillator.type = 'square';
+        oscillator.frequency.setValueAtTime(880, context.currentTime + delay);
+        oscillator.frequency.exponentialRampToValueAtTime(520, context.currentTime + delay + 0.12);
+        oscillator.connect(gain);
+        oscillator.start(context.currentTime + delay);
+        oscillator.stop(context.currentTime + delay + 0.14);
+        if (delay > 0) oscillator.addEventListener('ended', () => void context.close());
+      });
+    };
+    if (context.state === 'suspended') {
+      void context
+        .resume()
+        .then(scheduleAlarm)
+        .catch(() => void context.close());
+    } else {
+      scheduleAlarm();
+    }
   }
 
   private stepTextStyle(active: boolean): Phaser.Types.GameObjects.Text.TextStyle {

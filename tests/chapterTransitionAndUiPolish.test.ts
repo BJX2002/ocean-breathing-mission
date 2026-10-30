@@ -35,6 +35,10 @@ describe('chapter selection reliability and requested UI polish', () => {
     expect(lab).toContain('pulseGuide(equipmentGuide);');
     expect(lab).toContain('pulseGuide(goalGuide);');
     expect(lab).toContain('.rectangle(318, 318, 292, 58');
+    expect(lab).toContain("this.addModalButton(root, 440, 836, 250, i18n.t('common.backStep')");
+    expect(lab).toContain('{ x: 960, y: 565, width: 1260, height: 410 }');
+    expect(lab).toContain("new URL('audio/sfx/budget-alarm.mp3', document.baseURI)");
+    expect(lab).toContain('webkitAudioContext');
   });
 
   it('uses large option labels and roomier answer cards across both chapters', () => {

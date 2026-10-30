@@ -22,7 +22,8 @@ describe('recorded narration assets', () => {
     expect(scene).toContain("this.playNarrationCue('dive-mission-brief'");
     expect(scene).toContain("this.playNarrationCue('report-food-lesson'");
     expect(scene).toContain("this.playNarrationCue('report-food-chain-v2'");
-    expect(scene).toContain("this.playNarrationCue('report-fish-gills-question-v3'");
+    expect(scene).toContain("this.playNarrationCue('report-fish-gills-question-v4'");
+    expect(scene).toContain('automaticKey,');
     expect(scene).toContain("this.playNarrationCue('report-do-bridge'");
     expect(scene).toContain("'feedback-correct-v2'");
     expect(scene).toContain('hideHighlightWhenIdle: true');
@@ -53,11 +54,11 @@ describe('recorded narration assets', () => {
   });
 
   it('uses cache-busted Cantonese prompts for the fish question and correct feedback', () => {
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('食物鏈');
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚靠身體邊個部位');
-    expect(narrationCues['report-fish-gills-question-v3'].can).toContain('魚鰓');
-    expect(narrationCues['report-fish-gills-question-v3'].can).not.toContain('一開一合');
-    expect(narrationCues['report-fish-gills-question-v3'].can).not.toContain('選項');
+    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('食物鏈');
+    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('魚靠身體邊個部位');
+    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('魚鰓');
+    expect(narrationCues['report-fish-gills-question-v4'].can).not.toContain('一開一合');
+    expect(narrationCues['report-fish-gills-question-v4'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].pth).not.toContain('选项');
     expect(narrationCues['lab-final-quiz-1'].eng).not.toContain('Options');
