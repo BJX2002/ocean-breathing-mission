@@ -268,7 +268,7 @@ export class DiveScene extends Phaser.Scene {
       'report-compare-2',
       'report-food-lesson',
       'report-food-chain-v2',
-      'report-fish-gills-question-v4',
+      'report-fish-gills-question-v5',
       'report-do-bridge',
       'report-recap-1',
       'report-recap-2',
@@ -2787,6 +2787,12 @@ export class DiveScene extends Phaser.Scene {
         .setOrigin(0, 1)
         .setDepth(3004),
     );
+    const answerButtons: ResearchButton[] = [];
+    let answerLocked = true;
+    const setAnswerButtonsEnabled = (enabled: boolean): void => {
+      answerLocked = !enabled;
+      answerButtons.forEach((button) => button.setEnabled(enabled));
+    };
     [
       { key: 'report.doQuestionGills', correct: true },
       { key: 'report.doQuestionSurface', correct: false },
@@ -2800,16 +2806,24 @@ export class DiveScene extends Phaser.Scene {
         `${index === 0 ? 'A' : 'B'}. ${i18n.t(choice.key)}`,
         { tone: 'secondary', fontSize: 28, lineSpacing: 6, depth: 3004 },
       );
+      button.setEnabled(false);
+      answerButtons.push(button);
       add(button.root);
       button.onPress(() => {
+        if (answerLocked) return;
+        setAnswerButtonsEnabled(false);
         button.setTone(choice.correct ? 'primary' : 'danger');
         feedback.setText(
           i18n.t(choice.correct ? 'report.doQuestionCorrect' : 'report.doQuestionTryAgain'),
         );
         if (!choice.correct) {
-          this.playNarrationCue('feedback-try-again', button.root, {
+          const unlockAnswers = (): void => setAnswerButtonsEnabled(true);
+          const accepted = this.playNarrationCue('feedback-try-again', button.root, {
             hideHighlightWhenIdle: false,
+            onComplete: unlockAnswers,
+            onError: unlockAnswers,
           });
+          if (!accepted) unlockAnswers();
           return;
         }
         const advance = (): void => this.showDoBridge();
@@ -2844,15 +2858,23 @@ export class DiveScene extends Phaser.Scene {
     add(voiceButton.root);
     const automaticKey = `report-fish-gills-question-${++this.fishGillsNarrationVisit}`;
     const playQuestionNarration = (automatic = false): void => {
+      setAnswerButtonsEnabled(false);
       voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-      const accepted = this.playNarrationCue('report-fish-gills-question-v4', narrationHighlight, {
+      const finishQuestionNarration = (): void => {
+        setAnswerButtonsEnabled(true);
+        voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+      };
+      const accepted = this.playNarrationCue('report-fish-gills-question-v5', narrationHighlight, {
         automatic,
         automaticKey,
         hideHighlightWhenIdle: true,
-        onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
-        onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
+        onComplete: finishQuestionNarration,
+        onError: () => {
+          setAnswerButtonsEnabled(true);
+          voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true);
+        },
       });
-      if (!accepted) voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true);
+      if (!accepted) finishQuestionNarration();
     };
     voiceButton.onPress(() => playQuestionNarration(false));
     this.lessonOverlayObjects = objects;

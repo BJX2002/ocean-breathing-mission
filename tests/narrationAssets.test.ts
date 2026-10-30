@@ -7,7 +7,7 @@ const voices = ['can', 'pth', 'eng'] as const;
 
 describe('recorded narration assets', () => {
   it('ships every guided cue in Cantonese, Mandarin, and English', () => {
-    expect(Object.keys(narrationCues)).toHaveLength(42);
+    expect(Object.keys(narrationCues)).toHaveLength(43);
     for (const cueId of Object.keys(narrationCues)) {
       for (const voice of voices) {
         const audioPath = resolve(`public/runtime-public/audio/narration/${voice}/${cueId}.mp3`);
@@ -22,7 +22,7 @@ describe('recorded narration assets', () => {
     expect(scene).toContain("this.playNarrationCue('dive-mission-brief'");
     expect(scene).toContain("this.playNarrationCue('report-food-lesson'");
     expect(scene).toContain("this.playNarrationCue('report-food-chain-v2'");
-    expect(scene).toContain("this.playNarrationCue('report-fish-gills-question-v4'");
+    expect(scene).toContain("this.playNarrationCue('report-fish-gills-question-v5'");
     expect(scene).toContain('automaticKey,');
     expect(scene).toContain("this.playNarrationCue('report-do-bridge'");
     expect(scene).toContain("'feedback-correct-v2'");
@@ -54,11 +54,12 @@ describe('recorded narration assets', () => {
   });
 
   it('uses cache-busted Cantonese prompts for the fish question and correct feedback', () => {
-    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('食物鏈');
-    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('魚靠身體邊個部位');
-    expect(narrationCues['report-fish-gills-question-v4'].can).toContain('魚鰓');
-    expect(narrationCues['report-fish-gills-question-v4'].can).not.toContain('一開一合');
-    expect(narrationCues['report-fish-gills-question-v4'].can).not.toContain('選項');
+    const scene = readFileSync(resolve('src/scenes/DiveScene.ts'), 'utf8');
+    expect(narrationCues['report-fish-gills-question-v5'].can).toContain('食物鏈');
+    expect(narrationCues['report-fish-gills-question-v5'].can).toContain('魚靠身體邊個部位');
+    expect(narrationCues['report-fish-gills-question-v5'].can).toContain('A，魚腮。');
+    expect(narrationCues['report-fish-gills-question-v5'].can).not.toContain('一開一合');
+    expect(narrationCues['report-fish-gills-question-v5'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].can).not.toContain('選項');
     expect(narrationCues['lab-final-quiz-1'].pth).not.toContain('选项');
     expect(narrationCues['lab-final-quiz-1'].eng).not.toContain('Options');
@@ -66,6 +67,11 @@ describe('recorded narration assets', () => {
     expect(narrationCues['lab-experiment-guide'].can).toContain('讓光照射感測膜');
     expect(narrationCues['lab-experiment-guide'].can).not.toContain('教育模擬');
     expect(narrationCues['feedback-correct-v2'].can).toContain('答對咗');
+    expect(scene).toContain('const answerButtons: ResearchButton[] = [];');
+    expect(scene).toContain('const setAnswerButtonsEnabled = (enabled: boolean): void => {');
+    expect(scene).toContain('answerButtons.forEach((button) => button.setEnabled(enabled));');
+    expect(scene).toContain('if (answerLocked) return;');
+    expect(scene).toContain('onComplete: finishQuestionNarration');
   });
 
   it('supports launch-time narration speed and locks progression during playback', () => {

@@ -153,6 +153,13 @@ describe('Chapter 2 monitoring teaching flow', () => {
     expect(result).toContain('const hasNextToolTrial =');
     expect(result).toContain('nextToolHighlight');
     expect(result).toContain('repeat: -1');
+    expect(result).toContain('const sidebarReasons = this.add.container(1445, 545)');
+    expect(result).toContain('const renderFailureReasons = (): void => {');
+    expect(result).toContain('wordWrap: { width: 275, useAdvancedWrap: true }');
+    expect(result).toContain('offsetY += Math.max(bullet.height, reason.height) + itemGap;');
+    expect(result).not.toContain(
+      "failureReasonKeys.map((key) => `• ${i18n.t(key)}`).join('\\n')",
+    );
     expect(source).not.toContain('DoTimelineChart');
   });
 
