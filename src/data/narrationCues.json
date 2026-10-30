@@ -24,6 +24,11 @@
     "pth": "食物链显示生物彼此依赖。要了解小型鱼为什么减少，先看看鱼怎样从水中取得氧气。题目：鱼靠身体的哪个部位，从水中取得氧气？A，鱼鳃。B，鱼鳞。",
     "eng": "A food chain shows how organisms depend on one another. To investigate why small fish declined, first see how fish take oxygen from water. Question: What do fish use to take oxygen from water? A, gills. B, scales."
   },
+  "report-fish-gills-question-v5": {
+    "can": "食物鏈顯示生物彼此依賴。要了解小型魚點解減少，先睇下魚點樣喺水入面取得氧氣。題目：魚靠身體邊個部位，喺水入面取得氧氣？A，魚腮。B，魚鱗。",
+    "pth": "食物链显示生物彼此依赖。要了解小型鱼为什么减少，先看看鱼怎样从水中取得氧气。题目：鱼靠身体的哪个部位，从水中取得氧气？A，鱼鳃。B，鱼鳞。",
+    "eng": "A food chain shows how organisms depend on one another. To investigate why small fish declined, first see how fish take oxygen from water. Question: What do fish use to take oxygen from water? A, gills. B, scales."
+  },
   "report-do-bridge": {
     "can": "D O 就係溶解氧，即係溶喺水入面，俾魚同其他水中生物呼吸嘅氧氣。一次讀數可能會錯過清晨低氧，所以要喺唔同位置、唔同深度連續監測。",
     "pth": "D O 就是溶解氧，也就是溶在水里，供鱼和其他水中生物呼吸的氧气。一次读数可能错过清晨低氧，所以要在不同位置、不同深度连续监测。",

@@ -2808,7 +2808,7 @@ export class Chapter2LabScene extends Phaser.Scene {
       .setOrigin(0.5);
     root.add([detailSurface, selectedDevice, cellExplanation]);
 
-    const sidebarSurface = createResearchSurface(this, 1600, 630, 320, 350, {
+    const sidebarSurface = createResearchSurface(this, 1600, 630, 350, 350, {
       fill: Palette.cardSoft,
       border: snapshot.success ? Palette.success : Palette.gold,
       borderAlpha: 0.56,
@@ -2833,20 +2833,49 @@ export class Chapter2LabScene extends Phaser.Scene {
       .text(
         1600,
         545,
-        snapshot.success
-          ? i18n.t('lab.resultAdvantageBody')
-          : failureReasonKeys.map((key) => `• ${i18n.t(key)}`).join('\n'),
+        snapshot.success ? i18n.t('lab.resultAdvantageBody') : '',
         {
           fontFamily: 'sans-serif',
-          fontSize: snapshot.success ? '21px' : '18px',
+          fontSize: '21px',
           color: '#d7edf1',
           align: 'left',
-          lineSpacing: snapshot.success ? 14 : 8,
-          wordWrap: { width: 270, useAdvancedWrap: true },
+          lineSpacing: 14,
+          wordWrap: { width: 290, useAdvancedWrap: true },
         },
       )
       .setOrigin(0.5, 0);
-    root.add([sidebarSurface, sidebarTitle, sidebarBody]);
+    const sidebarReasons = this.add.container(1445, 545).setVisible(!snapshot.success);
+    const renderFailureReasons = (): void => {
+      sidebarReasons.removeAll(true);
+      const reasonCount = failureReasonKeys.length;
+      const fontSize = reasonCount >= 4 ? 14 : reasonCount === 3 ? 16 : 18;
+      const itemGap = reasonCount >= 4 ? 6 : 12;
+      let offsetY = 0;
+      failureReasonKeys.forEach((key) => {
+        const bullet = this.add
+          .text(0, offsetY, '•', {
+            fontFamily: 'sans-serif',
+            fontSize: `${fontSize}px`,
+            color: '#d7edf1',
+            fontStyle: 'bold',
+          })
+          .setOrigin(0, 0);
+        const reason = this.add
+          .text(22, offsetY, i18n.t(key), {
+            fontFamily: 'sans-serif',
+            fontSize: `${fontSize}px`,
+            color: '#d7edf1',
+            align: 'left',
+            lineSpacing: 4,
+            wordWrap: { width: 275, useAdvancedWrap: true },
+          })
+          .setOrigin(0, 0);
+        sidebarReasons.add([bullet, reason]);
+        offsetY += Math.max(bullet.height, reason.height) + itemGap;
+      });
+    };
+    if (!snapshot.success) renderFailureReasons();
+    root.add([sidebarSurface, sidebarTitle, sidebarBody, sidebarReasons]);
 
     this.addModalNarration(
       root,
@@ -2911,7 +2940,7 @@ export class Chapter2LabScene extends Phaser.Scene {
         if (!failureReasonKeys.includes('lab.resultReasonOverBudget')) {
           failureReasonKeys.push('lab.resultReasonOverBudget');
           resultNarrationCues.push('lab-result-reason-over-budget');
-          sidebarBody.setText(failureReasonKeys.map((key) => `• ${i18n.t(key)}`).join('\n'));
+          renderFailureReasons();
         }
         this.playBudgetAlarm();
         narrationService.play('lab-result-reason-over-budget');
