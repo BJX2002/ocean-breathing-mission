@@ -145,6 +145,7 @@ export class DiveScene extends Phaser.Scene {
   private foodWebNarrationHighlight: Phaser.GameObjects.Rectangle | null = null;
   private foodWebNarrationButton: ResearchButton | null = null;
   private doBridgeNarrationPlayed = false;
+  private fishGillsNarrationVisit = 0;
   private directDragPointerId: number | null = null;
   private directDragOffset = new Phaser.Math.Vector2();
   private directDragTarget: Phaser.Math.Vector2 | null = null;
@@ -255,6 +256,7 @@ export class DiveScene extends Phaser.Scene {
     this.observedSpecies.clear();
     this.pendingObservationReview = null;
     this.doBridgeNarrationPlayed = false;
+    this.fishGillsNarrationVisit = 0;
     this.directDragPointerId = null;
     this.directDragTarget = null;
     this.directDragOffset.set(0, 0);
@@ -266,7 +268,7 @@ export class DiveScene extends Phaser.Scene {
       'report-compare-2',
       'report-food-lesson',
       'report-food-chain-v2',
-      'report-fish-gills-question-v3',
+      'report-fish-gills-question-v4',
       'report-do-bridge',
       'report-recap-1',
       'report-recap-2',
@@ -2840,10 +2842,12 @@ export class DiveScene extends Phaser.Scene {
       { tone: 'secondary', fontSize: 20, depth: 3004 },
     );
     add(voiceButton.root);
+    const automaticKey = `report-fish-gills-question-${++this.fishGillsNarrationVisit}`;
     const playQuestionNarration = (automatic = false): void => {
       voiceButton.setText(i18n.t('report.aiVoicePlaying')).setEnabled(false);
-      const accepted = this.playNarrationCue('report-fish-gills-question-v3', narrationHighlight, {
+      const accepted = this.playNarrationCue('report-fish-gills-question-v4', narrationHighlight, {
         automatic,
+        automaticKey,
         hideHighlightWhenIdle: true,
         onComplete: () => voiceButton.setText(i18n.t('report.aiVoiceReplay')).setEnabled(true),
         onError: () => voiceButton.setText(i18n.t('report.aiVoiceRetry')).setEnabled(true),
@@ -4705,6 +4709,7 @@ export class DiveScene extends Phaser.Scene {
     highlightTarget: Phaser.GameObjects.GameObject,
     options: {
       readonly automatic?: boolean;
+      readonly automaticKey?: string;
       readonly hideHighlightWhenIdle?: boolean;
       readonly onComplete?: () => void;
       readonly onError?: () => void;
@@ -4721,6 +4726,7 @@ export class DiveScene extends Phaser.Scene {
     };
     const accepted = narrationService.play(cue, {
       automatic: options.automatic,
+      automaticKey: options.automaticKey,
       onStart: () => {
         target.setVisible(true);
         target.setAlpha(0.42);
